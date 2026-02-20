@@ -31,6 +31,14 @@ export class SessionStore {
     return state.sessions.find((session) => session.id === sessionId);
   }
 
+  async getSessionByChannelId(
+    channelId: string,
+  ): Promise<SessionRecord | undefined> {
+    await this.queue;
+    const state = await this.readState();
+    return state.sessions.find((session) => session.channelId === channelId);
+  }
+
   async createSession(input: CreateSessionInput): Promise<SessionRecord> {
     return this.withMutation(async (state) => {
       const projectPath = input.projectPath.trim();
@@ -112,6 +120,27 @@ export class SessionStore {
         session.channelId = channelId;
       } else {
         delete session.channelId;
+      }
+
+      return session;
+    });
+  }
+
+  async setSessionCodexThreadId(
+    sessionId: string,
+    codexThreadId: string | undefined,
+  ): Promise<SessionRecord> {
+    return this.withMutation(async (state) => {
+      const session = state.sessions.find((candidate) => candidate.id === sessionId);
+
+      if (!session) {
+        throw new Error(`Session ${sessionId} does not exist.`);
+      }
+
+      if (codexThreadId) {
+        session.codexThreadId = codexThreadId;
+      } else {
+        delete session.codexThreadId;
       }
 
       return session;
@@ -210,7 +239,9 @@ function isSessionRecord(candidate: unknown): candidate is SessionRecord {
     typeof record.title === "string" &&
     typeof record.createdByUserId === "string" &&
     typeof record.createdAt === "string" &&
-    (typeof record.channelId === "undefined" || typeof record.channelId === "string")
+    (typeof record.channelId === "undefined" || typeof record.channelId === "string") &&
+    (typeof record.codexThreadId === "undefined" ||
+      typeof record.codexThreadId === "string")
   );
 }
 

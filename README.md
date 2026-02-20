@@ -12,6 +12,11 @@ bun install
 ```bash
 bun --version
 ```
+3. Ensure Codex CLI is installed and authenticated:
+```bash
+codex --version
+codex login
+```
 
 ## 2. How to Setup Initials
 
@@ -20,6 +25,7 @@ bun --version
 - Send Messages
 - Use Slash Commands
 - Manage Channels (required for channel mode)
+- `MESSAGE CONTENT INTENT` (required so the bot can forward user messages to Codex)
 3. Copy your bot token and set environment variables.
 
 DM mode (default):
@@ -52,6 +58,9 @@ bun run watch
 - `/delete session_id:<id>` deletes a session.
 - `/focus session_id:<id>` sets focused session (DM mode only).
 - `/list [project]` lists sessions grouped by project path.
-3. Behavior by mode:
+3. Chat with Codex from Discord:
+- DM mode: send a normal DM to the bot; it forwards the message to your focused session and replies with Codex output.
+- Channel mode: send a normal message in a session channel; the bot forwards it to that session and replies in-thread.
+4. Behavior by mode:
 - DM mode: bot manages your focused session in direct messages.
 - Channel mode: bot auto-creates channels for sessions in the configured category.

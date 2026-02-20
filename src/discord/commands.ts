@@ -160,6 +160,10 @@ async function handleNewCommand(
     context.config.mode === "dm"
       ? `\nFocused session: \`${session.id}\``
       : "";
+  const chatHint =
+    context.config.mode === "dm"
+      ? "\nSend a DM to the bot to chat with this session."
+      : "\nSend a message in the session channel to chat with Codex.";
 
   await interaction.reply({
     content:
@@ -167,7 +171,8 @@ async function handleNewCommand(
       `Project: \`${session.projectPath}\`\n` +
       `Title: ${session.title}` +
       channelMessage +
-      focusMessage,
+      focusMessage +
+      chatHint,
   });
 }
 

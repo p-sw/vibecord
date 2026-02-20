@@ -9,6 +9,8 @@ Vibecord is a Bun + TypeScript CLI project for Codex session operations on Disco
 - `src/discord/bot.ts`: Discord client bootstrap.
 - `src/discord/commands.ts`: slash command registration and handlers (`/new`, `/delete`, `/focus`, `/list`).
 - `src/discord/channel-mode.ts`: session-to-channel sync logic for channel mode.
+- `src/discord/message-relay.ts`: Discord message forwarding from DM/session channels into Codex sessions.
+- `src/codex/bridge.ts`: Codex CLI bridge for creating/resuming sessions and collecting assistant replies.
 - `src/session/store.ts`: JSON-backed persistent session/focus state store.
 - `src/session/types.ts`: session and state type definitions.
 - `package.json`: runtime metadata and scripts.
@@ -35,6 +37,7 @@ bun run index.ts watch
 - `DISCORD_BOT_TOKEN` (required): Discord bot token.
 - `DISCORD_GUILD_ID` + `DISCORD_CATEGORY_ID` (optional pair): enables channel mode; if either is set, both must be set.
 - `VIBECORD_STATE_FILE` (optional): absolute/relative path for session state JSON file (default `.vibecord/sessions.json`).
+- Codex CLI must be installed and authenticated (`codex --version`, `codex login`) on the host running `watch`.
 
 ## Coding Style & Naming Conventions
 - Language: TypeScript (ES modules).

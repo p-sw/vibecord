@@ -1,21 +1,36 @@
-import { Client, GatewayIntentBits } from "discord.js";
+import { Client, GatewayIntentBits, Partials } from "discord.js";
+import { CodexBridge } from "../codex/bridge.ts";
 import { loadBotConfig } from "../config.ts";
 import { SessionStore } from "../session/store.ts";
 import { syncSessionChannels } from "./channel-mode.ts";
 import { attachCommandHandlers, registerCommands } from "./commands.ts";
+import { attachMessageRelay } from "./message-relay.ts";
 
 export async function startDiscordBot(): Promise<void> {
   const config = loadBotConfig();
   const store = new SessionStore(config.stateFilePath);
+  const codex = new CodexBridge(store);
 
   const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages],
+    intents: [
+      GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMessages,
+      GatewayIntentBits.DirectMessages,
+      GatewayIntentBits.MessageContent,
+    ],
+    partials: [Partials.Channel],
   });
 
   attachCommandHandlers({
     client,
     config,
     store,
+  });
+  attachMessageRelay({
+    client,
+    config,
+    store,
+    codex,
   });
 
   client.once("clientReady", async (readyClient) => {

@@ -5,6 +5,7 @@ export interface SessionRecord {
   createdByUserId: string;
   createdAt: string;
   channelId?: string;
+  codexThreadId?: string;
 }
 
 export interface SessionState {
