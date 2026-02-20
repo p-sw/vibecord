@@ -1,0 +1,22 @@
+{
+  "name": "vibecord",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun run index.ts",
+    "start": "bun run index.ts",
+    "launch": "bun run index.ts launch",
+    "manage": "bun run index.ts manage",
+    "watch": "bun run index.ts watch"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "discord.js": "^14.25.1"
+  }
+}
