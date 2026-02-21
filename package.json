@@ -1,6 +1,6 @@
 {
   "name": "vibecord",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "Discord bot runtime for Codex session operations",
   "module": "index.ts",
   "type": "module",
