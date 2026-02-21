@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { dirname, resolve } from "node:path";
-import { stat } from "node:fs/promises";
+import { readFile, stat, unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { SessionStore } from "../session/store.ts";
 import type { SessionRecord } from "../session/types.ts";
 
@@ -39,42 +41,51 @@ export class CodexBridge {
 
     return this.withSessionLock(session.id, async () => {
       const cwd = await resolveCodexWorkingDirectory(session.projectPath);
+      const outputFilePath = resolve(
+        tmpdir(),
+        `vibecord-codex-reply-${randomUUID()}.txt`,
+      );
       const commandArgs = buildCodexCommandArgs(
         session.codexThreadId,
         trimmedPrompt,
+        outputFilePath,
       );
       const result = await runProcess(CODEX_BINARY, commandArgs, cwd);
 
-      if (result.exitCode !== 0) {
-        throw new Error(buildCodexFailureMessage(result));
+      try {
+        if (result.exitCode !== 0) {
+          throw new Error(buildCodexFailureMessage(result));
+        }
+
+        const combinedOutput = [result.stdout, result.stderr].join("\n");
+        const threadId =
+          parseSessionId(combinedOutput) ?? session.codexThreadId;
+
+        if (!threadId) {
+          throw new Error(
+            "Codex did not expose a session id. Check Codex CLI configuration and try again.",
+          );
+        }
+
+        const reply = await readAssistantReply(outputFilePath, combinedOutput);
+
+        if (!reply) {
+          throw new Error(
+            "Codex did not return an assistant reply. Try sending the message again.",
+          );
+        }
+
+        if (threadId !== session.codexThreadId) {
+          await this.store.setSessionCodexThreadId(session.id, threadId);
+        }
+
+        return {
+          threadId,
+          reply,
+        };
+      } finally {
+        await cleanupFile(outputFilePath);
       }
-
-      const combinedOutput = [result.stdout, result.stderr].join("\n");
-      const threadId =
-        parseSessionId(combinedOutput) ?? session.codexThreadId;
-
-      if (!threadId) {
-        throw new Error(
-          "Codex did not expose a session id. Check Codex CLI configuration and try again.",
-        );
-      }
-
-      const reply = parseAssistantReply(combinedOutput);
-
-      if (!reply) {
-        throw new Error(
-          "Codex did not return an assistant reply. Try sending the message again.",
-        );
-      }
-
-      if (threadId !== session.codexThreadId) {
-        await this.store.setSessionCodexThreadId(session.id, threadId);
-      }
-
-      return {
-        threadId,
-        reply,
-      };
     });
   }
 
@@ -104,6 +115,7 @@ export class CodexBridge {
 function buildCodexCommandArgs(
   threadId: string | undefined,
   prompt: string,
+  outputFilePath: string,
 ): string[] {
   if (threadId) {
     return [
@@ -111,13 +123,23 @@ function buildCodexCommandArgs(
       "--color",
       "never",
       "--skip-git-repo-check",
+      "--output-last-message",
+      outputFilePath,
       "resume",
       threadId,
       prompt,
     ];
   }
 
-  return ["exec", "--color", "never", "--skip-git-repo-check", prompt];
+  return [
+    "exec",
+    "--color",
+    "never",
+    "--skip-git-repo-check",
+    "--output-last-message",
+    outputFilePath,
+    prompt,
+  ];
 }
 
 async function resolveCodexWorkingDirectory(projectPath: string): Promise<string> {
@@ -234,4 +256,25 @@ function buildCodexFailureMessage(result: ProcessResult): string {
   const detail = stderr.at(-1) ?? stdout.at(-1) ?? "Codex command failed.";
 
   return `Codex command failed (exit ${result.exitCode}): ${detail}`;
+}
+
+async function readAssistantReply(
+  outputFilePath: string,
+  combinedOutput: string,
+): Promise<string | undefined> {
+  try {
+    const reply = (await readFile(outputFilePath, "utf8")).trim();
+
+    if (reply) {
+      return reply;
+    }
+  } catch {
+    // Fallback to stream parsing for older/newer CLI behavior differences.
+  }
+
+  return parseAssistantReply(combinedOutput);
+}
+
+async function cleanupFile(path: string): Promise<void> {
+  await unlink(path).catch(() => undefined);
 }
