@@ -36,7 +36,7 @@ export function loadBotConfig(): BotConfig {
 
   if (!token) {
     throw new Error(
-      `Missing ${DISCORD_BOT_TOKEN_ENV}. Set it in your environment before running the watch command.`,
+      `Missing ${DISCORD_BOT_TOKEN_ENV}. Set it in your environment before starting the bot.`,
     );
   }
 

@@ -51,7 +51,7 @@ export VIBECORD_STATE_FILE="/absolute/path/to/sessions.json"
 
 1. Start the bot:
 ```bash
-bun run watch
+bun run start
 ```
 2. Use slash commands in Discord:
 - `/new project:<path> [title]` creates a session.
