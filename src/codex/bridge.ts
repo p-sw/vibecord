@@ -14,6 +14,7 @@ export interface CodexTurnResult {
   threadId: string;
   reply: string;
   rateLimits?: CodexRateLimits;
+  contextWindow?: CodexContextWindow;
 }
 
 interface ProcessResult {
@@ -45,6 +46,12 @@ export interface CodexRateLimits {
   secondary?: CodexRateLimitWindow;
   credits?: CodexCredits;
   planType?: string | null;
+}
+
+export interface CodexContextWindow {
+  usedTokens: number;
+  maxTokens: number;
+  percentLeft: number;
 }
 
 export class CodexBridge {
@@ -89,6 +96,7 @@ export class CodexBridge {
         const threadId =
           parseSessionId(combinedOutput) ?? session.codexThreadId;
         const rateLimits = parseRateLimits(combinedOutput);
+        const contextWindow = parseContextWindow(combinedOutput);
 
         if (!threadId) {
           throw new Error(
@@ -112,6 +120,7 @@ export class CodexBridge {
           threadId,
           reply,
           rateLimits,
+          contextWindow,
         };
       } finally {
         await cleanupFile(outputFilePath);
@@ -351,6 +360,79 @@ function parseRateLimits(output: string): CodexRateLimits | undefined {
   }
 
   return latest;
+}
+
+function parseContextWindow(output: string): CodexContextWindow | undefined {
+  let latest: CodexContextWindow | undefined;
+
+  for (const line of output.split("\n")) {
+    const parsed = parseJsonLine(line);
+
+    if (!parsed || typeof parsed !== "object") {
+      continue;
+    }
+
+    const tokenCountInfo = extractTokenCountInfo(parsed as Record<string, unknown>);
+
+    if (!tokenCountInfo) {
+      continue;
+    }
+
+    const usedTokens = Math.max(0, Math.min(tokenCountInfo.totalTokens, tokenCountInfo.maxTokens));
+    const percentLeft = Math.max(0, Math.min(100, ((tokenCountInfo.maxTokens - usedTokens) / tokenCountInfo.maxTokens) * 100));
+
+    latest = {
+      usedTokens,
+      maxTokens: tokenCountInfo.maxTokens,
+      percentLeft,
+    };
+  }
+
+  return latest;
+}
+
+function extractTokenCountInfo(
+  event: Record<string, unknown>,
+): { totalTokens: number; maxTokens: number } | undefined {
+  const directInfo = event.type === "token_count" ? event.info : undefined;
+  const payloadValue = event.payload;
+  const payload =
+    payloadValue && typeof payloadValue === "object"
+      ? (payloadValue as Record<string, unknown>)
+      : undefined;
+  const payloadInfo = payload?.type === "token_count" ? payload.info : undefined;
+
+  return normalizeTokenCountInfo(directInfo ?? payloadInfo);
+}
+
+function normalizeTokenCountInfo(
+  value: unknown,
+): { totalTokens: number; maxTokens: number } | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  const modelContextWindow = asFiniteNumber(record.model_context_window);
+  const totalTokenUsageValue = record.total_token_usage;
+  const totalTokenUsage =
+    totalTokenUsageValue && typeof totalTokenUsageValue === "object"
+      ? (totalTokenUsageValue as Record<string, unknown>)
+      : undefined;
+  const totalTokens = asFiniteNumber(totalTokenUsage?.total_tokens);
+
+  if (
+    typeof modelContextWindow === "undefined" ||
+    typeof totalTokens === "undefined" ||
+    modelContextWindow <= 0
+  ) {
+    return undefined;
+  }
+
+  return {
+    totalTokens,
+    maxTokens: modelContextWindow,
+  };
 }
 
 function normalizeRateLimits(value: unknown): CodexRateLimits | undefined {

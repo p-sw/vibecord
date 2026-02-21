@@ -3,7 +3,11 @@ import {
   Client,
   SlashCommandBuilder,
 } from "discord.js";
-import { CodexBridge, type CodexRateLimits } from "../codex/bridge.ts";
+import {
+  CodexBridge,
+  type CodexContextWindow,
+  type CodexRateLimits,
+} from "../codex/bridge.ts";
 import { hasChannelMode, type BotConfig } from "../config.ts";
 import { SessionStore } from "../session/store.ts";
 import type { SessionRecord } from "../session/types.ts";
@@ -336,10 +340,15 @@ async function handleStatusCommand(
     includeRateLimits: true,
   });
   const usageSummary = formatRateLimitSummary(result.rateLimits);
+  const contextWindowFooter = formatContextWindowFooter(result.contextWindow);
   const sections = [`Session \`${session.id}\` status:\n${result.reply}`];
 
   if (usageSummary) {
     sections.push(`Usage limits:\n${usageSummary}`);
+  }
+
+  if (contextWindowFooter) {
+    sections.push(contextWindowFooter);
   }
 
   await interaction.editReply({
@@ -557,6 +566,17 @@ function formatPercent(value: number): string {
 
 function stripBackticksAroundDiscordTimestamps(content: string): string {
   return content.replace(/`(<t:\d{10}:[A-Za-z]>)`/g, "$1");
+}
+
+function formatContextWindowFooter(
+  contextWindow: CodexContextWindow | undefined,
+): string | undefined {
+  if (!contextWindow) {
+    return undefined;
+  }
+
+  const percentLeft = Math.round(clampPercent(contextWindow.percentLeft));
+  return `-# ${percentLeft}% context left`;
 }
 
 async function clearGuildScopedCommands(client: Client): Promise<void> {

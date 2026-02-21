@@ -80,7 +80,7 @@ Use slash commands in Discord:
 - `/delete session_id:<id>` deletes a session.
 - `/focus session_id:<id>` sets focused session for DM chats.
 - `/list [project]` lists sessions grouped by project path.
-- `/status [session_id]` prints Codex status plus usage-limit/reset-time info for a session (defaults to channel-linked or focused session).
+- `/status [session_id]` prints Codex status plus usage-limit/reset-time info for a session and appends a context-left footer (defaults to channel-linked or focused session).
 - `/compact [session_id]` runs Codex `/compact` in a session (defaults to channel-linked or focused session).
 - `/init [session_id]` runs Codex `/init` in a session (defaults to channel-linked or focused session).
 
