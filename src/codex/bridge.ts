@@ -7,6 +7,7 @@ import { SessionStore } from "../session/store.ts";
 import type { SessionRecord } from "../session/types.ts";
 
 const CODEX_BINARY = "codex";
+const SCRIPT_BINARY = "script";
 const CODEX_SESSION_ID_PATTERN =
   /session id:\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
 
@@ -101,7 +102,12 @@ export class CodexBridge {
       outputFilePath,
       options.includeRateLimits === true,
     );
-    const result = await runProcess(CODEX_BINARY, commandArgs, cwd);
+    const result = await runProcess(
+      CODEX_BINARY,
+      commandArgs,
+      cwd,
+      `Unable to find "${CODEX_BINARY}" in PATH. Install Codex CLI and retry.`,
+    );
 
     try {
       if (result.exitCode !== 0) {
@@ -150,7 +156,11 @@ export class CodexBridge {
   ): Promise<CodexTurnResult> {
     const snapshot = await captureSessionLogSnapshot();
     const commandArgs = buildInteractiveCommandArgs(session.codexThreadId, prompt);
-    const result = await runProcess(CODEX_BINARY, commandArgs, cwd);
+    const result = await runProcessWithPseudoTerminal(
+      CODEX_BINARY,
+      commandArgs,
+      cwd,
+    );
 
     if (result.exitCode !== 0) {
       throw new Error(buildCodexFailureMessage(result));
@@ -290,6 +300,7 @@ function runProcess(
   command: string,
   args: string[],
   cwd: string,
+  notFoundMessage?: string,
 ): Promise<ProcessResult> {
   return new Promise((resolveResult, rejectResult) => {
     const child = spawn(command, args, {
@@ -316,7 +327,8 @@ function runProcess(
       if (error.code === "ENOENT") {
         rejectResult(
           new Error(
-            `Unable to find "${CODEX_BINARY}" in PATH. Install Codex CLI and retry.`,
+            notFoundMessage ??
+              `Unable to find "${command}" in PATH. Install required dependencies and retry.`,
           ),
         );
         return;
@@ -333,6 +345,34 @@ function runProcess(
       });
     });
   });
+}
+
+function runProcessWithPseudoTerminal(
+  command: string,
+  args: string[],
+  cwd: string,
+): Promise<ProcessResult> {
+  const escapedCommand = buildShellCommand(command, args);
+  const scriptArgs = ["-q", "-e", "-c", escapedCommand, "/dev/null"];
+
+  return runProcess(
+    SCRIPT_BINARY,
+    scriptArgs,
+    cwd,
+    `Unable to find "${SCRIPT_BINARY}" in PATH. Install util-linux script(1) and retry.`,
+  );
+}
+
+function buildShellCommand(command: string, args: string[]): string {
+  return [command, ...args].map(quoteShellArg).join(" ");
+}
+
+function quoteShellArg(value: string): string {
+  if (value.length === 0) {
+    return "''";
+  }
+
+  return `'${value.replace(/'/g, `'\"'\"'`)}'`;
 }
 
 function parseSessionId(stdout: string): string | undefined {

@@ -47,6 +47,7 @@ bun run index.ts start
 - Config key `dmAllowlistUserIds` (optional array): when set and non-empty, only listed Discord user IDs can send DM prompts to Codex.
 - `vibecord setup` can register a systemd user/system service on Linux.
 - Codex CLI must be installed and authenticated (`codex --version`, `codex login`) on the host running the bot.
+- Interactive slash-command execution (`/status`, `/compact`, `/init`) requires `script` (util-linux) available on PATH.
 
 ## Coding Style & Naming Conventions
 - Language: TypeScript (ES modules).

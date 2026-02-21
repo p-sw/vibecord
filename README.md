@@ -15,6 +15,11 @@ codex --version
 codex login
 ```
 
+For interactive slash commands (`/status`, `/compact`, `/init`), ensure `script` (from util-linux) is available on PATH:
+```bash
+script --version
+```
+
 ## 2. Initial Setup
 
 1. Create a Discord application and bot in the Discord Developer Portal.
