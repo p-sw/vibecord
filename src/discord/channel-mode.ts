@@ -1,5 +1,5 @@
 import { ChannelType, Client, type Guild, type GuildTextBasedChannel } from "discord.js";
-import type { BotConfig } from "../config.ts";
+import { hasChannelMode, type BotConfig, type ChannelEnabledBotConfig } from "../config.ts";
 import { SessionStore } from "../session/store.ts";
 import type { SessionRecord } from "../session/types.ts";
 
@@ -12,7 +12,7 @@ export async function syncSessionChannels(
   config: BotConfig,
   store: SessionStore,
 ): Promise<void> {
-  if (config.mode !== "channel") {
+  if (!hasChannelMode(config)) {
     return;
   }
 
@@ -29,7 +29,7 @@ export async function ensureSessionChannel(
   store: SessionStore,
   session: SessionRecord,
 ): Promise<GuildTextBasedChannel> {
-  if (config.mode !== "channel") {
+  if (!hasChannelMode(config)) {
     throw new Error("Channel mode is not enabled.");
   }
 
@@ -64,7 +64,7 @@ export async function deleteSessionChannel(
   config: BotConfig,
   session: SessionRecord,
 ): Promise<void> {
-  if (config.mode !== "channel" || !session.channelId) {
+  if (!hasChannelMode(config) || !session.channelId) {
     return;
   }
 
@@ -80,12 +80,8 @@ export async function deleteSessionChannel(
 
 async function resolveGuildContext(
   client: Client,
-  config: BotConfig,
+  config: ChannelEnabledBotConfig,
 ): Promise<GuildContext> {
-  if (config.mode !== "channel") {
-    throw new Error("Channel mode is not enabled.");
-  }
-
   const guild = await client.guilds.fetch(config.guildId);
   const category = await guild.channels.fetch(config.categoryId).catch(() => null);
 

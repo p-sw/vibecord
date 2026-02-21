@@ -1,6 +1,6 @@
 import { ChannelType, type Client, type Message } from "discord.js";
 import { CodexBridge } from "../codex/bridge.ts";
-import type { BotConfig } from "../config.ts";
+import { hasChannelMode, type BotConfig } from "../config.ts";
 import { SessionStore } from "../session/store.ts";
 import type { SessionRecord } from "../session/types.ts";
 
@@ -61,35 +61,42 @@ async function resolveSession(
   message: Message,
   context: MessageRelayContext,
 ): Promise<SessionRecord | undefined> {
-  if (context.config.mode === "dm") {
-    if (message.channel.type !== ChannelType.DM) {
-      return undefined;
-    }
+  if (message.channel.type === ChannelType.DM) {
+    return resolveDmSession(message, context);
+  }
 
-    const focusedSessionId = await context.store.getFocusedSessionId(message.author.id);
-
-    if (!focusedSessionId) {
-      await message.reply({
-        content:
-          "No focused session. Create one with `/new`, then set it with `/focus session_id:<id>`.",
-      });
-      return undefined;
-    }
-
-    const focusedSession = await context.store.getSession(focusedSessionId);
-
-    if (!focusedSession) {
-      await message.reply({
-        content:
-          "Your focused session no longer exists. Run `/list`, then set a new `/focus` session.",
-      });
-      return undefined;
-    }
-
-    return focusedSession;
+  if (!hasChannelMode(context.config)) {
+    return undefined;
   }
 
   return context.store.getSessionByChannelId(message.channelId);
+}
+
+async function resolveDmSession(
+  message: Message,
+  context: MessageRelayContext,
+): Promise<SessionRecord | undefined> {
+  const focusedSessionId = await context.store.getFocusedSessionId(message.author.id);
+
+  if (!focusedSessionId) {
+    await message.reply({
+      content:
+        "No focused session. Create one with `/new`, then set it with `/focus session_id:<id>`.",
+    });
+    return undefined;
+  }
+
+  const focusedSession = await context.store.getSession(focusedSessionId);
+
+  if (!focusedSession) {
+    await message.reply({
+      content:
+        "Your focused session no longer exists. Run `/list`, then set a new `/focus` session.",
+    });
+    return undefined;
+  }
+
+  return focusedSession;
 }
 
 function clipForDiscord(content: string): string {

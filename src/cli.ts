@@ -130,11 +130,16 @@ async function runInteractiveSetup(options: CliOptions): Promise<SetupResult> {
     }
 
     const token = await prompt.askRequired("Discord bot token");
-    const mode = await prompt.askChoice("Bot mode (dm/channel)", ["dm", "channel"], "dm");
-    const guildId =
-      mode === "channel" ? await prompt.askRequired("Discord guild ID") : undefined;
-    const categoryId =
-      mode === "channel" ? await prompt.askRequired("Discord category ID") : undefined;
+    const configureChannelMode = await prompt.askYesNo(
+      "Configure channel mode (guild/category) now",
+      false,
+    );
+    const guildId = configureChannelMode
+      ? await prompt.askRequired("Discord guild ID")
+      : undefined;
+    const categoryId = configureChannelMode
+      ? await prompt.askRequired("Discord category ID")
+      : undefined;
     const stateFilePath = await prompt.askRequired(
       "State file path",
       getDefaultStateFilePath(),
@@ -142,7 +147,6 @@ async function runInteractiveSetup(options: CliOptions): Promise<SetupResult> {
 
     await writeBotConfigFile(configPath, {
       token,
-      mode,
       guildId,
       categoryId,
       stateFilePath,

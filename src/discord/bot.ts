@@ -1,6 +1,6 @@
 import { Client, GatewayIntentBits, Partials } from "discord.js";
 import { CodexBridge } from "../codex/bridge.ts";
-import { loadBotConfig } from "../config.ts";
+import { hasChannelMode, loadBotConfig } from "../config.ts";
 import { SessionStore } from "../session/store.ts";
 import { syncSessionChannels } from "./channel-mode.ts";
 import { attachCommandHandlers, registerCommands } from "./commands.ts";
@@ -34,15 +34,16 @@ export async function startDiscordBot(configFilePath?: string): Promise<void> {
   });
 
   client.once("clientReady", async (readyClient) => {
+    const modeLabel = hasChannelMode(config) ? "dm+channel" : "dm";
     console.log(
-      `Discord bot connected as ${readyClient.user.tag} (mode: ${config.mode})`,
+      `Discord bot connected as ${readyClient.user.tag} (mode: ${modeLabel})`,
     );
 
     try {
       await registerCommands(client, config);
       console.log("Slash commands registered.");
 
-      if (config.mode === "channel") {
+      if (hasChannelMode(config)) {
         await syncSessionChannels(client, config, store);
         console.log("Channel mode sync complete.");
       }

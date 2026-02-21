@@ -30,7 +30,8 @@ vibecord setup
 
 Setup flow:
 - Writes config JSON (default: `~/.config/vibecord/config.json`)
-- Sets Discord token + mode (`dm` or `channel`)
+- Sets Discord token
+- Optionally sets channel-sync values (`guildId` + `categoryId`)
 - Sets state file path (default: `~/.local/state/vibecord/sessions.json`)
 - Optionally writes and enables a Linux systemd service
 
@@ -38,16 +39,14 @@ Example config:
 ```json
 {
   "discordBotToken": "your-bot-token",
-  "mode": "dm",
   "stateFilePath": "/home/you/.local/state/vibecord/sessions.json"
 }
 ```
 
-Channel mode config example:
+DM + channel config example:
 ```json
 {
   "discordBotToken": "your-bot-token",
-  "mode": "channel",
   "guildId": "your-server-id",
   "categoryId": "your-category-id",
   "stateFilePath": "/home/you/.local/state/vibecord/sessions.json"
@@ -76,16 +75,16 @@ vibecord start --config /path/to/config.json
 Use slash commands in Discord:
 - `/new project:<path> [title]` creates a session.
 - `/delete session_id:<id>` deletes a session.
-- `/focus session_id:<id>` sets focused session (DM mode only).
+- `/focus session_id:<id>` sets focused session for DM chats.
 - `/list [project]` lists sessions grouped by project path.
 
 Chat with Codex from Discord:
 - DM mode: send a normal DM to the bot; it forwards the message to your focused session and replies with Codex output.
-- Channel mode: send a normal message in a session channel; the bot forwards it to that session and replies in-thread.
+- Channel mode (enabled when `guildId` + `categoryId` are set): send a normal message in a session channel; the bot forwards it to that session and replies in-thread.
 
 Behavior by mode:
 - DM mode: bot manages your focused session in direct messages.
-- Channel mode: bot auto-creates channels for sessions in the configured category.
+- With `guildId` + `categoryId` configured, channel mode is enabled in addition to DM mode, and the bot auto-creates channels for sessions in the configured category.
 
 ## 4. Packaging Notes
 

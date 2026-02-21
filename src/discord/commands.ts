@@ -3,7 +3,7 @@ import {
   Client,
   SlashCommandBuilder,
 } from "discord.js";
-import type { BotConfig } from "../config.ts";
+import { hasChannelMode, type BotConfig } from "../config.ts";
 import { SessionStore } from "../session/store.ts";
 import type { SessionRecord } from "../session/types.ts";
 import {
@@ -38,7 +38,7 @@ const commandBuilders = [
     ),
   new SlashCommandBuilder()
     .setName("focus")
-    .setDescription("Set your focused session (DM mode)")
+    .setDescription("Set your focused session for DM chats")
     .addStringOption((option) =>
       option
         .setName("session_id")
@@ -74,7 +74,7 @@ export async function registerCommands(
 
   await client.application.commands.set(commandPayload);
 
-  if (config.mode === "channel") {
+  if (hasChannelMode(config)) {
     const guild = await client.guilds.fetch(config.guildId);
     await guild.commands.set(commandPayload);
   }
@@ -142,7 +142,7 @@ async function handleNewCommand(
 
   let channelMessage = "";
 
-  if (context.config.mode === "channel") {
+  if (hasChannelMode(context.config)) {
     const channel = await ensureSessionChannel(
       context.client,
       context.config,
@@ -152,18 +152,12 @@ async function handleNewCommand(
     channelMessage = `\nChannel: <#${channel.id}>`;
   }
 
-  if (context.config.mode === "dm") {
-    await context.store.setFocusedSessionId(interaction.user.id, session.id);
-  }
+  await context.store.setFocusedSessionId(interaction.user.id, session.id);
 
-  const focusMessage =
-    context.config.mode === "dm"
-      ? `\nFocused session: \`${session.id}\``
-      : "";
-  const chatHint =
-    context.config.mode === "dm"
-      ? "\nSend a DM to the bot to chat with this session."
-      : "\nSend a message in the session channel to chat with Codex.";
+  const focusMessage = `\nFocused session: \`${session.id}\``;
+  const chatHint = hasChannelMode(context.config)
+    ? "\nSend a DM to the bot or a message in the session channel to chat with Codex."
+    : "\nSend a DM to the bot to chat with this session.";
 
   await interaction.reply({
     content:
@@ -201,13 +195,6 @@ async function handleFocusCommand(
   interaction: ChatInputCommandInteraction,
   context: CommandContext,
 ): Promise<void> {
-  if (context.config.mode !== "dm") {
-    await interaction.reply({
-      content: "Focus is only available in DM mode.",
-    });
-    return;
-  }
-
   const sessionId = interaction.options.getString("session_id", true).trim();
   const session = await context.store.getSession(sessionId);
 
@@ -246,10 +233,7 @@ async function handleListCommand(
     return;
   }
 
-  const focusedSessionId =
-    context.config.mode === "dm"
-      ? await context.store.getFocusedSessionId(interaction.user.id)
-      : undefined;
+  const focusedSessionId = await context.store.getFocusedSessionId(interaction.user.id);
 
   const groupedByProject = groupByProject(filtered);
   const messageLines: string[] = [];

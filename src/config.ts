@@ -2,25 +2,19 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 
-export type BotMode = "dm" | "channel";
-
-interface BaseBotConfig {
+export interface BotConfig {
   token: string;
-  mode: BotMode;
   stateFilePath: string;
+  guildId?: string;
+  categoryId?: string;
+  channelModeEnabled: boolean;
 }
 
-export interface DmBotConfig extends BaseBotConfig {
-  mode: "dm";
-}
-
-export interface ChannelBotConfig extends BaseBotConfig {
-  mode: "channel";
+export interface ChannelEnabledBotConfig extends BotConfig {
   guildId: string;
   categoryId: string;
+  channelModeEnabled: true;
 }
-
-export type BotConfig = DmBotConfig | ChannelBotConfig;
 
 interface BotConfigFile {
   discordBotToken?: unknown;
@@ -32,7 +26,6 @@ interface BotConfigFile {
 
 export interface WritableBotConfig {
   token: string;
-  mode: BotMode;
   guildId?: string;
   categoryId?: string;
   stateFilePath: string;
@@ -68,9 +61,10 @@ export async function writeBotConfigFile(
   configFilePath: string,
   config: WritableBotConfig,
 ): Promise<void> {
-  const mode = config.mode;
   const token = config.token.trim();
   const stateFilePath = config.stateFilePath.trim();
+  const guildId = config.guildId?.trim();
+  const categoryId = config.categoryId?.trim();
 
   if (!token) {
     throw new Error('Config value "discordBotToken" cannot be empty.');
@@ -80,20 +74,16 @@ export async function writeBotConfigFile(
     throw new Error('Config value "stateFilePath" cannot be empty.');
   }
 
+  if ((guildId && !categoryId) || (!guildId && categoryId)) {
+    throw new Error('Set both "guildId" and "categoryId", or set neither.');
+  }
+
   const payload: Record<string, string> = {
     discordBotToken: token,
-    mode,
     stateFilePath,
   };
 
-  if (mode === "channel") {
-    const guildId = config.guildId?.trim();
-    const categoryId = config.categoryId?.trim();
-
-    if (!guildId || !categoryId) {
-      throw new Error('Channel mode requires "guildId" and "categoryId".');
-    }
-
+  if (guildId && categoryId) {
     payload.guildId = guildId;
     payload.categoryId = categoryId;
   }
@@ -149,33 +139,39 @@ export async function loadBotConfig(configFilePath?: string): Promise<BotConfig>
     throw new Error(`Config ${resolvedConfigFilePath} is missing "discordBotToken".`);
   }
 
-  if (modeValue !== "dm" && modeValue !== "channel") {
+  if (modeValue && modeValue !== "dm" && modeValue !== "channel") {
     throw new Error(
-      `Config ${resolvedConfigFilePath} must set "mode" to "dm" or "channel".`,
+      `Config ${resolvedConfigFilePath} has invalid "mode" value. Use "dm" or "channel".`,
     );
   }
 
-  if (modeValue === "channel") {
-    if (!guildId || !categoryId) {
-      throw new Error(
-        `Channel mode requires both "guildId" and "categoryId" in ${resolvedConfigFilePath}.`,
-      );
-    }
-
-    return {
-      token,
-      mode: "channel",
-      guildId,
-      categoryId,
-      stateFilePath,
-    };
+  if ((guildId && !categoryId) || (!guildId && categoryId)) {
+    throw new Error(
+      `Config ${resolvedConfigFilePath} must set both "guildId" and "categoryId", or set neither.`,
+    );
   }
+
+  if (modeValue === "channel" && !guildId) {
+    throw new Error(
+      `Config ${resolvedConfigFilePath} sets "mode" to "channel" but is missing "guildId" and "categoryId".`,
+    );
+  }
+
+  const channelModeEnabled = Boolean(guildId && categoryId);
 
   return {
     token,
-    mode: "dm",
     stateFilePath,
+    guildId,
+    categoryId,
+    channelModeEnabled,
   };
+}
+
+export function hasChannelMode(
+  config: BotConfig,
+): config is ChannelEnabledBotConfig {
+  return config.channelModeEnabled;
 }
 
 function asTrimmedString(value: unknown): string | undefined {
