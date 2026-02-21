@@ -9,7 +9,6 @@ import type { SessionRecord } from "../session/types.ts";
 import {
   deleteSessionChannel,
   ensureSessionChannel,
-  resolveConfiguredGuild,
 } from "./channel-mode.ts";
 
 const commandBuilders = [
@@ -67,18 +66,14 @@ interface CommandContext {
 
 export async function registerCommands(
   client: Client,
-  config: BotConfig,
+  _config: BotConfig,
 ): Promise<void> {
   if (!client.application) {
     throw new Error("Discord application client is not ready for command registration.");
   }
 
   await client.application.commands.set(commandPayload);
-
-  if (hasChannelMode(config)) {
-    const guild = await resolveConfiguredGuild(client, config);
-    await guild.commands.set(commandPayload);
-  }
+  await clearGuildScopedCommands(client);
 }
 
 export function attachCommandHandlers(context: CommandContext): void {
@@ -290,4 +285,20 @@ function clipForDiscord(content: string): string {
   }
 
   return `${content.slice(0, 1850)}\n... output truncated ...`;
+}
+
+async function clearGuildScopedCommands(client: Client): Promise<void> {
+  const guildReferences = await client.guilds.fetch();
+
+  for (const guildReference of guildReferences.values()) {
+    try {
+      const guild = await client.guilds.fetch(guildReference.id);
+      await guild.commands.set([]);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `Failed to clear guild command overrides for ${guildReference.id}: ${message}`,
+      );
+    }
+  }
 }
