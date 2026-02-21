@@ -22,6 +22,7 @@ interface ProcessResult {
   exitCode: number;
   stdout: string;
   stderr: string;
+  timedOut: boolean;
 }
 
 interface SendMessageOptions {
@@ -156,15 +157,13 @@ export class CodexBridge {
   ): Promise<CodexTurnResult> {
     const snapshot = await captureSessionLogSnapshot();
     const commandArgs = buildInteractiveCommandArgs(session.codexThreadId, prompt);
+    const timeoutMs = resolveInteractiveTimeoutMs(prompt);
     const result = await runProcessWithPseudoTerminal(
       CODEX_BINARY,
       commandArgs,
       cwd,
+      timeoutMs,
     );
-
-    if (result.exitCode !== 0) {
-      throw new Error(buildCodexFailureMessage(result));
-    }
 
     const combinedOutput = [result.stdout, result.stderr].join("\n");
     const logDelta = await readSessionLogDelta(snapshot);
@@ -184,9 +183,25 @@ export class CodexBridge {
     }
 
     if (!reply) {
+      if (result.timedOut) {
+        throw new Error(
+          `Codex interactive command timed out after ${Math.round(
+            timeoutMs / 1000,
+          )}s without an assistant reply.`,
+        );
+      }
+
+      if (result.exitCode !== 0) {
+        throw new Error(buildCodexFailureMessage(result));
+      }
+
       throw new Error(
         "Codex did not return an assistant reply in interactive mode. Try sending the command again.",
       );
+    }
+
+    if (result.exitCode !== 0 && !result.timedOut) {
+      throw new Error(buildCodexFailureMessage(result));
     }
 
     if (threadId !== session.codexThreadId) {
@@ -301,6 +316,7 @@ function runProcess(
   args: string[],
   cwd: string,
   notFoundMessage?: string,
+  timeoutMs?: number,
 ): Promise<ProcessResult> {
   return new Promise((resolveResult, rejectResult) => {
     const child = spawn(command, args, {
@@ -311,6 +327,19 @@ function runProcess(
 
     let stdout = "";
     let stderr = "";
+    let timedOut = false;
+    let timeoutHandle: NodeJS.Timeout | undefined;
+    let forceKillHandle: NodeJS.Timeout | undefined;
+
+    const clearTimers = (): void => {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+
+      if (forceKillHandle) {
+        clearTimeout(forceKillHandle);
+      }
+    };
 
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
@@ -324,6 +353,8 @@ function runProcess(
     });
 
     child.once("error", (error: NodeJS.ErrnoException) => {
+      clearTimers();
+
       if (error.code === "ENOENT") {
         rejectResult(
           new Error(
@@ -337,11 +368,24 @@ function runProcess(
       rejectResult(error);
     });
 
+    if (typeof timeoutMs === "number" && timeoutMs > 0) {
+      timeoutHandle = setTimeout(() => {
+        timedOut = true;
+        child.kill("SIGTERM");
+        forceKillHandle = setTimeout(() => {
+          child.kill("SIGKILL");
+        }, 2_000);
+      }, timeoutMs);
+    }
+
     child.once("close", (code) => {
+      clearTimers();
+
       resolveResult({
-        exitCode: code ?? 1,
+        exitCode: code ?? (timedOut ? 124 : 1),
         stdout,
         stderr,
+        timedOut,
       });
     });
   });
@@ -351,6 +395,7 @@ function runProcessWithPseudoTerminal(
   command: string,
   args: string[],
   cwd: string,
+  timeoutMs: number,
 ): Promise<ProcessResult> {
   const escapedCommand = buildShellCommand(command, args);
   const scriptArgs = ["-q", "-e", "-c", escapedCommand, "/dev/null"];
@@ -360,7 +405,22 @@ function runProcessWithPseudoTerminal(
     scriptArgs,
     cwd,
     `Unable to find "${SCRIPT_BINARY}" in PATH. Install util-linux script(1) and retry.`,
+    timeoutMs,
   );
+}
+
+function resolveInteractiveTimeoutMs(prompt: string): number {
+  const normalizedPrompt = prompt.trim().toLowerCase();
+
+  if (normalizedPrompt === "/status") {
+    return 15_000;
+  }
+
+  if (normalizedPrompt === "/compact" || normalizedPrompt === "/init") {
+    return 60_000;
+  }
+
+  return 90_000;
 }
 
 function buildShellCommand(command: string, args: string[]): string {
