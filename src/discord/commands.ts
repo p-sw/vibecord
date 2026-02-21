@@ -64,6 +64,24 @@ const commandBuilders = [
         .setDescription("Optional session ID (defaults to channel-linked or focused)")
         .setRequired(false),
     ),
+  new SlashCommandBuilder()
+    .setName("compact")
+    .setDescription("Run Codex /compact for a session")
+    .addStringOption((option) =>
+      option
+        .setName("session_id")
+        .setDescription("Optional session ID (defaults to channel-linked or focused)")
+        .setRequired(false),
+    ),
+  new SlashCommandBuilder()
+    .setName("init")
+    .setDescription("Run Codex /init for a session")
+    .addStringOption((option) =>
+      option
+        .setName("session_id")
+        .setDescription("Optional session ID (defaults to channel-linked or focused)")
+        .setRequired(false),
+    ),
 ];
 
 const commandPayload = commandBuilders.map((builder) => builder.toJSON());
@@ -129,6 +147,12 @@ async function handleCommand(
       return;
     case "status":
       await handleStatusCommand(interaction, context);
+      return;
+    case "compact":
+      await handleCompactCommand(interaction, context);
+      return;
+    case "init":
+      await handleInitCommand(interaction, context);
       return;
     default:
       await interaction.reply({
@@ -278,10 +302,10 @@ async function handleStatusCommand(
   interaction: ChatInputCommandInteraction,
   context: CommandContext,
 ): Promise<void> {
-  const requestedSessionId = interaction.options.getString("session_id")?.trim();
-  const session = requestedSessionId
-    ? await context.store.getSession(requestedSessionId)
-    : await resolveImplicitSession(interaction, context);
+  const { requestedSessionId, session } = await resolveCommandSession(
+    interaction,
+    context,
+  );
 
   if (!session) {
     if (requestedSessionId) {
@@ -321,6 +345,96 @@ async function handleStatusCommand(
   await interaction.editReply({
     content: clipForDiscord(stripBackticksAroundDiscordTimestamps(sections.join("\n\n"))),
   });
+}
+
+async function handleCompactCommand(
+  interaction: ChatInputCommandInteraction,
+  context: CommandContext,
+): Promise<void> {
+  const { requestedSessionId, session } = await resolveCommandSession(
+    interaction,
+    context,
+  );
+
+  if (!session) {
+    if (requestedSessionId) {
+      await interaction.reply({
+        content: `Session \`${requestedSessionId}\` was not found.`,
+      });
+      return;
+    }
+
+    await interaction.reply({
+      content:
+        "No session selected. Use `/compact session_id:<id>`, run this in a session channel, or set `/focus` for DM compact.",
+    });
+    return;
+  }
+
+  if (!session.codexThreadId) {
+    await interaction.reply({
+      content:
+        `Session \`${session.id}\` has no Codex thread yet. Send a normal message to this session first, then run \`/compact\` again.`,
+    });
+    return;
+  }
+
+  await interaction.deferReply();
+  const result = await context.codex.sendMessage(session, "/compact");
+
+  await interaction.editReply({
+    content: clipForDiscord(`Session \`${session.id}\` compact:\n${result.reply}`),
+  });
+}
+
+async function handleInitCommand(
+  interaction: ChatInputCommandInteraction,
+  context: CommandContext,
+): Promise<void> {
+  const { requestedSessionId, session } = await resolveCommandSession(
+    interaction,
+    context,
+  );
+
+  if (!session) {
+    if (requestedSessionId) {
+      await interaction.reply({
+        content: `Session \`${requestedSessionId}\` was not found.`,
+      });
+      return;
+    }
+
+    await interaction.reply({
+      content:
+        "No session selected. Use `/init session_id:<id>`, run this in a session channel, or set `/focus` for DM init.",
+    });
+    return;
+  }
+
+  await interaction.deferReply();
+  const result = await context.codex.sendMessage(session, "/init");
+
+  await interaction.editReply({
+    content: clipForDiscord(`Session \`${session.id}\` init:\n${result.reply}`),
+  });
+}
+
+async function resolveCommandSession(
+  interaction: ChatInputCommandInteraction,
+  context: CommandContext,
+): Promise<{
+  requestedSessionId: string | undefined;
+  session: SessionRecord | undefined;
+}> {
+  const requestedSessionId = interaction.options.getString("session_id")?.trim();
+  const session = requestedSessionId
+    ? await context.store.getSession(requestedSessionId)
+    : await resolveImplicitSession(interaction, context);
+
+  return {
+    requestedSessionId,
+    session,
+  };
 }
 
 async function resolveImplicitSession(

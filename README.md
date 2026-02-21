@@ -81,6 +81,8 @@ Use slash commands in Discord:
 - `/focus session_id:<id>` sets focused session for DM chats.
 - `/list [project]` lists sessions grouped by project path.
 - `/status [session_id]` prints Codex status plus usage-limit/reset-time info for a session (defaults to channel-linked or focused session).
+- `/compact [session_id]` runs Codex `/compact` in a session (defaults to channel-linked or focused session).
+- `/init [session_id]` runs Codex `/init` in a session (defaults to channel-linked or focused session).
 
 Chat with Codex from Discord:
 - DM mode: send a normal DM to the bot; it forwards the message to your focused session and replies with Codex output. If `dmAllowlistUserIds` is set, only listed users can send DM prompts to Codex.
