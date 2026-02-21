@@ -89,7 +89,7 @@ Behavior by mode:
 ## 4. Packaging Notes
 
 - End users do not need Bun or Node.js runtime.
-- The published npm package contains a prebuilt `dist/vibecord` native binary.
+- The published npm package exposes the prebuilt `dist/vibecord` binary directly via `directories.bin`.
 - Maintainers need Bun to build publish artifacts.
 - Default publish target is Linux x64 (`bun-linux-x64`).
 - Build before publish via:

@@ -5,7 +5,7 @@ Vibecord is a TypeScript Discord bot project for Codex session operations in Dis
 
 ## Project Structure & Module Organization
 - `index.ts`: process entrypoint that routes CLI commands (`start`, `setup`, `help`).
-- `bin/vibecord`: global executable shim used by `npm i -g vibecord` that launches packaged native binary.
+- `dist/vibecord`: compiled native binary published to npm and exposed via `directories.bin`.
 - `src/cli.ts`: command parsing and interactive setup flow (config + optional systemd registration).
 - `src/config.ts`: JSON file configuration loading/writing; DM is always enabled and channel mode is enabled when `guildId` + `categoryId` are configured.
 - `src/discord/bot.ts`: Discord client bootstrap.
