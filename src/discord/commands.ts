@@ -423,7 +423,7 @@ function formatRateLimitWindow(
 ): string {
   const cappedUsed = clampPercent(usedPercent);
   const remainingPercent = clampPercent(100 - cappedUsed);
-  const resetAbsolute = `<t:${Math.trunc(resetAtEpochSeconds)}:F>`;
+  const resetAbsolute = `<t:${Math.trunc(resetAtEpochSeconds)}:f>`;
   const resetRelative = `<t:${Math.trunc(resetAtEpochSeconds)}:R>`;
 
   return (
