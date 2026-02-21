@@ -4,7 +4,6 @@ import { constants } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   getDefaultStateFilePath,
   resolveConfigFilePath,
@@ -23,7 +22,6 @@ interface SetupResult {
   configPath: string;
   serviceName?: string;
   serviceFilePath?: string;
-  binaryPath?: string;
 }
 
 interface ProcessResult {
@@ -38,9 +36,6 @@ interface SystemdInstallInput {
   configPath: string;
   launchCommand: string[];
 }
-
-const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const ENTRYPOINT_PATH = resolve(PROJECT_ROOT, "index.ts");
 
 export async function runCli(rawArgs: string[] = process.argv.slice(2)): Promise<void> {
   const command = parseCommand(rawArgs[0]);
@@ -153,22 +148,6 @@ async function runInteractiveSetup(options: CliOptions): Promise<SetupResult> {
       stateFilePath,
     });
 
-    let binaryPath: string | undefined;
-    const shouldBuildBinary = await prompt.askYesNo(
-      "Build a standalone Bun binary for service usage",
-      true,
-    );
-
-    if (shouldBuildBinary) {
-      const defaultBinaryPath = resolve(homedir(), ".local", "bin", "vibecord");
-      const requestedBinaryPath = await prompt.askRequired(
-        "Binary output path",
-        defaultBinaryPath,
-      );
-      binaryPath = await buildStandaloneBinary(requestedBinaryPath);
-      console.log(`Built binary at ${binaryPath}`);
-    }
-
     const shouldInstallService = await prompt.askYesNo(
       "Install and enable a systemd service",
       true,
@@ -177,7 +156,6 @@ async function runInteractiveSetup(options: CliOptions): Promise<SetupResult> {
     if (!shouldInstallService) {
       return {
         configPath,
-        binaryPath,
       };
     }
 
@@ -191,9 +169,7 @@ async function runInteractiveSetup(options: CliOptions): Promise<SetupResult> {
       "user",
     );
     const serviceName = await prompt.askRequired("Service name", "vibecord");
-    const launchCommand = binaryPath
-      ? [binaryPath, "start", "--config", configPath]
-      : [process.execPath, resolve(process.argv[1] || ENTRYPOINT_PATH), "start", "--config", configPath];
+    const launchCommand = resolveLaunchCommand(configPath);
     const serviceFilePath = await installSystemdService({
       serviceName,
       scope: serviceScope,
@@ -205,34 +181,10 @@ async function runInteractiveSetup(options: CliOptions): Promise<SetupResult> {
       configPath,
       serviceName,
       serviceFilePath,
-      binaryPath,
     };
   } finally {
     prompt.close();
   }
-}
-
-async function buildStandaloneBinary(binaryPath: string): Promise<string> {
-  const outputPath = resolve(binaryPath);
-
-  await mkdir(dirname(outputPath), {
-    recursive: true,
-  });
-
-  const result = await runProcess("bun", [
-    "build",
-    ENTRYPOINT_PATH,
-    "--compile",
-    "--outfile",
-    outputPath,
-  ]);
-
-  if (result.exitCode !== 0) {
-    const detail = result.stderr.trim() || result.stdout.trim() || "bun build failed.";
-    throw new Error(`Unable to build standalone binary: ${detail}`);
-  }
-
-  return outputPath;
 }
 
 async function installSystemdService(input: SystemdInstallInput): Promise<string> {
@@ -242,7 +194,7 @@ async function installSystemdService(input: SystemdInstallInput): Promise<string
     : resolve("/etc/systemd/system", `${input.serviceName}.service`);
   const wantedBy = isUserScope ? "default.target" : "multi-user.target";
   const workingDirectory = dirname(input.configPath);
-  const pathValue = `${resolve(homedir(), ".bun", "bin")}:/usr/local/bin:/usr/bin:/bin`;
+  const pathValue = process.env.PATH || "/usr/local/bin:/usr/bin:/bin";
   const serviceFileContent = [
     "[Unit]",
     `Description=Vibecord Discord bot (${input.serviceName})`,
@@ -357,10 +309,6 @@ function printSetupSummary(result: SetupResult): void {
   console.log("Setup complete.");
   console.log(`Config file: ${result.configPath}`);
 
-  if (result.binaryPath) {
-    console.log(`Binary path: ${result.binaryPath}`);
-  }
-
   if (result.serviceName && result.serviceFilePath) {
     console.log(`Service: ${result.serviceName}`);
     console.log(`Service file: ${result.serviceFilePath}`);
@@ -369,6 +317,23 @@ function printSetupSummary(result: SetupResult): void {
   }
 
   console.log(`Run: vibecord start --config ${result.configPath}`);
+}
+
+function resolveLaunchCommand(configPath: string): string[] {
+  const argv1 = process.argv[1];
+  const scriptPath = argv1 ? resolve(argv1) : undefined;
+  const isScriptRuntime =
+    scriptPath &&
+    (scriptPath.endsWith(".ts") ||
+      scriptPath.endsWith(".js") ||
+      scriptPath.endsWith(".mjs") ||
+      scriptPath.endsWith(".cjs"));
+
+  if (isScriptRuntime) {
+    return [process.execPath, scriptPath, "start", "--config", configPath];
+  }
+
+  return [process.execPath, "start", "--config", configPath];
 }
 
 function createPromptSession() {

@@ -1,12 +1,12 @@
 # Repository Guidelines
 
 ## Project Summary
-Vibecord is a Bun + TypeScript Discord bot project for Codex session operations in Discord.
+Vibecord is a TypeScript Discord bot project for Codex session operations in Discord.
 
 ## Project Structure & Module Organization
 - `index.ts`: process entrypoint that routes CLI commands (`start`, `setup`, `help`).
-- `bin/vibecord`: global executable shim used by `npm i -g vibecord`.
-- `src/cli.ts`: command parsing and interactive setup flow (config + optional binary build + systemd registration).
+- `bin/vibecord`: global executable shim used by `npm i -g vibecord` that launches packaged native binary.
+- `src/cli.ts`: command parsing and interactive setup flow (config + optional systemd registration).
 - `src/config.ts`: JSON file configuration loading/writing and mode detection (`dm` or `channel`).
 - `src/discord/bot.ts`: Discord client bootstrap.
 - `src/discord/commands.ts`: slash command registration and handlers (`/new`, `/delete`, `/focus`, `/list`).
@@ -25,6 +25,8 @@ As features grow, place reusable logic under `src/` and keep `index.ts` as thin 
 ## Build, Test, and Development Commands
 - `npm i -g vibecord`: install global CLI.
 - `bun install`: install dependencies from `package.json`.
+- `npm run build:binary`: compile native executable to `dist/vibecord` for publishing (default target `bun-linux-x64`; override via `VIBECORD_BINARY_TARGET`).
+- `npm run prepack`: clean/build publish artifact (`dist/vibecord`).
 - `vibecord setup`: interactive setup for config and optional service.
 - `vibecord start`: start the Discord bot with default config path.
 - `vibecord start --config /path/to/config.json`: start with explicit config file.
@@ -43,7 +45,7 @@ bun run index.ts start
 - Config key `mode` (required): `dm` or `channel`.
 - Config keys `guildId` + `categoryId` (required in `channel` mode).
 - Config key `stateFilePath` (optional): absolute/relative path for session state JSON file (default `~/.local/state/vibecord/sessions.json`).
-- `vibecord setup` can optionally build a standalone Bun binary and register a systemd user/system service on Linux.
+- `vibecord setup` can register a systemd user/system service on Linux.
 - Codex CLI must be installed and authenticated (`codex --version`, `codex login`) on the host running the bot.
 
 ## Coding Style & Naming Conventions

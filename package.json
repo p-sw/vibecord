@@ -4,10 +4,18 @@
   "description": "Discord bot runtime for Codex session operations",
   "module": "index.ts",
   "type": "module",
+  "files": [
+    "bin/vibecord",
+    "dist/vibecord",
+    "README.md",
+    "LICENSE"
+  ],
   "bin": {
     "vibecord": "bin/vibecord"
   },
   "scripts": {
+    "build:binary": "sh -c 'TARGET=${VIBECORD_BINARY_TARGET:-bun-linux-x64}; bun build index.ts --compile --target \"$TARGET\" --outfile dist/vibecord && chmod +x dist/vibecord'",
+    "prepack": "rm -rf dist && mkdir -p dist && npm run build:binary",
     "dev": "bun run index.ts start",
     "start": "bun run index.ts start",
     "setup": "bun run index.ts setup"

@@ -1,17 +1,12 @@
 # vibecord
 
-Vibecord is a Bun + TypeScript Discord bot for Codex session management.
+Vibecord is a Discord bot for Codex session management.
 
 ## 1. Install
 
 Install globally:
 ```bash
 npm i -g vibecord
-```
-
-Ensure Bun is available:
-```bash
-bun --version
 ```
 
 Ensure Codex CLI is installed and authenticated:
@@ -37,7 +32,6 @@ Setup flow:
 - Writes config JSON (default: `~/.config/vibecord/config.json`)
 - Sets Discord token + mode (`dm` or `channel`)
 - Sets state file path (default: `~/.local/state/vibecord/sessions.json`)
-- Optionally builds a standalone Bun binary
 - Optionally writes and enables a Linux systemd service
 
 Example config:
@@ -92,3 +86,18 @@ Chat with Codex from Discord:
 Behavior by mode:
 - DM mode: bot manages your focused session in direct messages.
 - Channel mode: bot auto-creates channels for sessions in the configured category.
+
+## 4. Packaging Notes
+
+- End users do not need Bun or Node.js runtime.
+- The published npm package contains a prebuilt `dist/vibecord` native binary.
+- Maintainers need Bun to build publish artifacts.
+- Default publish target is Linux x64 (`bun-linux-x64`).
+- Build before publish via:
+```bash
+npm run build:binary
+```
+- Override target when needed:
+```bash
+VIBECORD_BINARY_TARGET=bun-linux-arm64 npm run build:binary
+```
