@@ -7,6 +7,7 @@ export interface BotConfig {
   stateFilePath: string;
   guildId?: string;
   categoryId?: string;
+  dmAllowlistUserIds: string[];
   channelModeEnabled: boolean;
 }
 
@@ -22,6 +23,7 @@ interface BotConfigFile {
   guildId?: unknown;
   categoryId?: unknown;
   stateFilePath?: unknown;
+  dmAllowlistUserIds?: unknown;
 }
 
 export interface WritableBotConfig {
@@ -29,6 +31,7 @@ export interface WritableBotConfig {
   guildId?: string;
   categoryId?: string;
   stateFilePath: string;
+  dmAllowlistUserIds?: string[];
 }
 
 const DEFAULT_CONFIG_FILE_PATH = resolve(
@@ -65,6 +68,7 @@ export async function writeBotConfigFile(
   const stateFilePath = config.stateFilePath.trim();
   const guildId = config.guildId?.trim();
   const categoryId = config.categoryId?.trim();
+  const dmAllowlistUserIds = normalizeDmAllowlistUserIds(config.dmAllowlistUserIds);
 
   if (!token) {
     throw new Error('Config value "discordBotToken" cannot be empty.');
@@ -78,7 +82,13 @@ export async function writeBotConfigFile(
     throw new Error('Set both "guildId" and "categoryId", or set neither.');
   }
 
-  const payload: Record<string, string> = {
+  const payload: {
+    discordBotToken: string;
+    stateFilePath: string;
+    guildId?: string;
+    categoryId?: string;
+    dmAllowlistUserIds?: string[];
+  } = {
     discordBotToken: token,
     stateFilePath,
   };
@@ -86,6 +96,10 @@ export async function writeBotConfigFile(
   if (guildId && categoryId) {
     payload.guildId = guildId;
     payload.categoryId = categoryId;
+  }
+
+  if (dmAllowlistUserIds.length > 0) {
+    payload.dmAllowlistUserIds = dmAllowlistUserIds;
   }
 
   const resolvedPath = resolveConfigFilePath(configFilePath);
@@ -129,6 +143,10 @@ export async function loadBotConfig(configFilePath?: string): Promise<BotConfig>
   const modeValue = asTrimmedString(parsed.mode);
   const guildId = asTrimmedString(parsed.guildId);
   const categoryId = asTrimmedString(parsed.categoryId);
+  const dmAllowlistUserIds = parseDmAllowlistUserIds(
+    parsed.dmAllowlistUserIds,
+    resolvedConfigFilePath,
+  );
   const rawStateFilePath = asTrimmedString(parsed.stateFilePath);
   const stateFilePath = resolve(
     dirname(resolvedConfigFilePath),
@@ -164,6 +182,7 @@ export async function loadBotConfig(configFilePath?: string): Promise<BotConfig>
     stateFilePath,
     guildId,
     categoryId,
+    dmAllowlistUserIds,
     channelModeEnabled,
   };
 }
@@ -181,6 +200,63 @@ function asTrimmedString(value: unknown): string | undefined {
 
   const trimmed = value.trim();
   return trimmed || undefined;
+}
+
+function normalizeDmAllowlistUserIds(userIds: readonly string[] | undefined): string[] {
+  if (!userIds) {
+    return [];
+  }
+
+  const unique = new Set<string>();
+
+  for (const userId of userIds) {
+    const trimmed = userId.trim();
+
+    if (!trimmed) {
+      continue;
+    }
+
+    unique.add(trimmed);
+  }
+
+  return [...unique];
+}
+
+function parseDmAllowlistUserIds(
+  value: unknown,
+  configPath: string,
+): string[] {
+  if (typeof value === "undefined") {
+    return [];
+  }
+
+  if (!Array.isArray(value)) {
+    throw new Error(
+      `Config ${configPath} has invalid "dmAllowlistUserIds". Expected an array of user ID strings.`,
+    );
+  }
+
+  const unique = new Set<string>();
+
+  for (const entry of value) {
+    if (typeof entry !== "string") {
+      throw new Error(
+        `Config ${configPath} has invalid "dmAllowlistUserIds". Every value must be a string.`,
+      );
+    }
+
+    const trimmed = entry.trim();
+
+    if (!trimmed) {
+      throw new Error(
+        `Config ${configPath} has invalid "dmAllowlistUserIds". Empty values are not allowed.`,
+      );
+    }
+
+    unique.add(trimmed);
+  }
+
+  return [...unique];
 }
 
 function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {

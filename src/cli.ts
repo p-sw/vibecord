@@ -144,12 +144,17 @@ async function runInteractiveSetup(options: CliOptions): Promise<SetupResult> {
       "State file path",
       getDefaultStateFilePath(),
     );
+    const dmAllowlistInput = await prompt.askOptional(
+      "DM allowlist user IDs (comma-separated, leave empty to allow any user)",
+    );
+    const dmAllowlistUserIds = parseCommaSeparatedValues(dmAllowlistInput);
 
     await writeBotConfigFile(configPath, {
       token,
       guildId,
       categoryId,
       stateFilePath,
+      dmAllowlistUserIds,
     });
 
     const shouldInstallService = await prompt.askYesNo(
@@ -360,6 +365,11 @@ function createPromptSession() {
         console.log(`${label} is required.`);
       }
     },
+    async askOptional(label: string, defaultValue?: string): Promise<string> {
+      const suffix = defaultValue ? ` [${defaultValue}]` : "";
+      const response = (await readline.question(`${label}${suffix}: `)).trim();
+      return response || defaultValue || "";
+    },
     async askChoice<TChoice extends string>(
       label: string,
       choices: readonly TChoice[],
@@ -409,6 +419,26 @@ function createPromptSession() {
       readline.close();
     },
   };
+}
+
+function parseCommaSeparatedValues(value: string): string[] {
+  if (!value.trim()) {
+    return [];
+  }
+
+  const uniqueValues = new Set<string>();
+
+  for (const part of value.split(",")) {
+    const trimmed = part.trim();
+
+    if (!trimmed) {
+      continue;
+    }
+
+    uniqueValues.add(trimmed);
+  }
+
+  return [...uniqueValues];
 }
 
 async function pathExists(pathValue: string): Promise<boolean> {

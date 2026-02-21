@@ -76,6 +76,16 @@ async function resolveDmSession(
   message: Message,
   context: MessageRelayContext,
 ): Promise<SessionRecord | undefined> {
+  if (
+    context.config.dmAllowlistUserIds.length > 0 &&
+    !context.config.dmAllowlistUserIds.includes(message.author.id)
+  ) {
+    await message.reply({
+      content: "You are not allowed to use DM mode for this bot.",
+    });
+    return undefined;
+  }
+
   const focusedSessionId = await context.store.getFocusedSessionId(message.author.id);
 
   if (!focusedSessionId) {
