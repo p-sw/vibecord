@@ -3,6 +3,7 @@ import {
   Client,
   SlashCommandBuilder,
 } from "discord.js";
+import { CodexBridge } from "../codex/bridge.ts";
 import { hasChannelMode, type BotConfig } from "../config.ts";
 import { SessionStore } from "../session/store.ts";
 import type { SessionRecord } from "../session/types.ts";
@@ -54,6 +55,15 @@ const commandBuilders = [
         .setDescription("Optional project filter")
         .setRequired(false),
     ),
+  new SlashCommandBuilder()
+    .setName("status")
+    .setDescription("Show Codex status for a session")
+    .addStringOption((option) =>
+      option
+        .setName("session_id")
+        .setDescription("Optional session ID (defaults to channel-linked or focused)")
+        .setRequired(false),
+    ),
 ];
 
 const commandPayload = commandBuilders.map((builder) => builder.toJSON());
@@ -62,6 +72,7 @@ interface CommandContext {
   client: Client;
   config: BotConfig;
   store: SessionStore;
+  codex: CodexBridge;
 }
 
 export async function registerCommands(
@@ -115,6 +126,9 @@ async function handleCommand(
       return;
     case "list":
       await handleListCommand(interaction, context);
+      return;
+    case "status":
+      await handleStatusCommand(interaction, context);
       return;
     default:
       await interaction.reply({
@@ -258,6 +272,71 @@ async function handleListCommand(
   await interaction.reply({
     content: clipForDiscord(messageLines.join("\n").trim()),
   });
+}
+
+async function handleStatusCommand(
+  interaction: ChatInputCommandInteraction,
+  context: CommandContext,
+): Promise<void> {
+  const requestedSessionId = interaction.options.getString("session_id")?.trim();
+  const session = requestedSessionId
+    ? await context.store.getSession(requestedSessionId)
+    : await resolveImplicitSession(interaction, context);
+
+  if (!session) {
+    if (requestedSessionId) {
+      await interaction.reply({
+        content: `Session \`${requestedSessionId}\` was not found.`,
+      });
+      return;
+    }
+
+    await interaction.reply({
+      content:
+        "No session selected. Use `/status session_id:<id>`, run this in a session channel, or set `/focus` for DM status.",
+    });
+    return;
+  }
+
+  if (!session.codexThreadId) {
+    await interaction.reply({
+      content:
+        `Session \`${session.id}\` has no Codex thread yet. Send a normal message to this session first, then run \`/status\` again.`,
+    });
+    return;
+  }
+
+  await interaction.deferReply();
+
+  const result = await context.codex.sendMessage(session, "/status");
+  const prefix = `Session \`${session.id}\` status:\n`;
+
+  await interaction.editReply({
+    content: clipForDiscord(`${prefix}${result.reply}`),
+  });
+}
+
+async function resolveImplicitSession(
+  interaction: ChatInputCommandInteraction,
+  context: CommandContext,
+): Promise<SessionRecord | undefined> {
+  if (hasChannelMode(context.config) && interaction.guildId) {
+    const sessionInChannel = await context.store.getSessionByChannelId(
+      interaction.channelId,
+    );
+
+    if (sessionInChannel) {
+      return sessionInChannel;
+    }
+  }
+
+  const focusedSessionId = await context.store.getFocusedSessionId(interaction.user.id);
+
+  if (!focusedSessionId) {
+    return undefined;
+  }
+
+  return context.store.getSession(focusedSessionId);
 }
 
 function groupByProject(

@@ -25,6 +25,7 @@ export async function startDiscordBot(configFilePath?: string): Promise<void> {
     client,
     config,
     store,
+    codex,
   });
   attachMessageRelay({
     client,
