@@ -3,7 +3,7 @@ import {
   Client,
   SlashCommandBuilder,
 } from "discord.js";
-import { CodexBridge } from "../codex/bridge.ts";
+import { CodexBridge, type CodexRateLimits } from "../codex/bridge.ts";
 import { hasChannelMode, type BotConfig } from "../config.ts";
 import { SessionStore } from "../session/store.ts";
 import type { SessionRecord } from "../session/types.ts";
@@ -308,11 +308,18 @@ async function handleStatusCommand(
 
   await interaction.deferReply();
 
-  const result = await context.codex.sendMessage(session, "/status");
-  const prefix = `Session \`${session.id}\` status:\n`;
+  const result = await context.codex.sendMessage(session, "/status", {
+    includeRateLimits: true,
+  });
+  const usageSummary = formatRateLimitSummary(result.rateLimits);
+  const sections = [`Session \`${session.id}\` status:\n${result.reply}`];
+
+  if (usageSummary) {
+    sections.push(`Usage limits:\n${usageSummary}`);
+  }
 
   await interaction.editReply({
-    content: clipForDiscord(`${prefix}${result.reply}`),
+    content: clipForDiscord(sections.join("\n\n")),
   });
 }
 
@@ -364,6 +371,74 @@ function clipForDiscord(content: string): string {
   }
 
   return `${content.slice(0, 1850)}\n... output truncated ...`;
+}
+
+function formatRateLimitSummary(rateLimits: CodexRateLimits | undefined): string | undefined {
+  if (!rateLimits) {
+    return undefined;
+  }
+
+  const lines: string[] = [];
+
+  if (rateLimits.limitId) {
+    lines.push(`Limit ID: \`${rateLimits.limitId}\``);
+  }
+
+  if (rateLimits.primary) {
+    lines.push(
+      formatRateLimitWindow("Primary", rateLimits.primary.usedPercent, rateLimits.primary.windowMinutes, rateLimits.primary.resetsAt),
+    );
+  }
+
+  if (rateLimits.secondary) {
+    lines.push(
+      formatRateLimitWindow("Secondary", rateLimits.secondary.usedPercent, rateLimits.secondary.windowMinutes, rateLimits.secondary.resetsAt),
+    );
+  }
+
+  if (rateLimits.credits) {
+    const creditsValue =
+      rateLimits.credits.balance === null ? "n/a" : String(rateLimits.credits.balance);
+    lines.push(
+      `Credits: has_credits=${String(rateLimits.credits.hasCredits)}, unlimited=${String(rateLimits.credits.unlimited)}, balance=${creditsValue}`,
+    );
+  }
+
+  if (rateLimits.planType) {
+    lines.push(`Plan type: ${rateLimits.planType}`);
+  }
+
+  if (lines.length === 0) {
+    return undefined;
+  }
+
+  return lines.join("\n");
+}
+
+function formatRateLimitWindow(
+  label: string,
+  usedPercent: number,
+  windowMinutes: number,
+  resetAtEpochSeconds: number,
+): string {
+  const cappedUsed = clampPercent(usedPercent);
+  const remainingPercent = clampPercent(100 - cappedUsed);
+  const resetAbsolute = `<t:${Math.trunc(resetAtEpochSeconds)}:F>`;
+  const resetRelative = `<t:${Math.trunc(resetAtEpochSeconds)}:R>`;
+
+  return (
+    `${label}: ${formatPercent(cappedUsed)} used` +
+    ` (${formatPercent(remainingPercent)} remaining), window ${windowMinutes}m, resets ${resetAbsolute} (${resetRelative})`
+  );
+}
+
+function clampPercent(value: number): number {
+  return Math.max(0, Math.min(100, value));
+}
+
+function formatPercent(value: number): string {
+  const rounded = Math.round(value * 10) / 10;
+  return Number.isInteger(rounded) ? `${rounded.toFixed(0)}%` : `${rounded.toFixed(1)}%`;
 }
 
 async function clearGuildScopedCommands(client: Client): Promise<void> {

@@ -13,12 +13,38 @@ const CODEX_SESSION_ID_PATTERN =
 export interface CodexTurnResult {
   threadId: string;
   reply: string;
+  rateLimits?: CodexRateLimits;
 }
 
 interface ProcessResult {
   exitCode: number;
   stdout: string;
   stderr: string;
+}
+
+interface SendMessageOptions {
+  includeRateLimits?: boolean;
+}
+
+export interface CodexRateLimitWindow {
+  usedPercent: number;
+  windowMinutes: number;
+  resetsAt: number;
+}
+
+interface CodexCredits {
+  hasCredits: boolean;
+  unlimited: boolean;
+  balance: number | null;
+}
+
+export interface CodexRateLimits {
+  limitId?: string;
+  limitName?: string | null;
+  primary?: CodexRateLimitWindow;
+  secondary?: CodexRateLimitWindow;
+  credits?: CodexCredits;
+  planType?: string | null;
 }
 
 export class CodexBridge {
@@ -32,6 +58,7 @@ export class CodexBridge {
   async sendMessage(
     session: SessionRecord,
     prompt: string,
+    options: SendMessageOptions = {},
   ): Promise<CodexTurnResult> {
     const trimmedPrompt = prompt.trim();
 
@@ -49,6 +76,7 @@ export class CodexBridge {
         session.codexThreadId,
         trimmedPrompt,
         outputFilePath,
+        options.includeRateLimits === true,
       );
       const result = await runProcess(CODEX_BINARY, commandArgs, cwd);
 
@@ -60,6 +88,7 @@ export class CodexBridge {
         const combinedOutput = [result.stdout, result.stderr].join("\n");
         const threadId =
           parseSessionId(combinedOutput) ?? session.codexThreadId;
+        const rateLimits = parseRateLimits(combinedOutput);
 
         if (!threadId) {
           throw new Error(
@@ -82,6 +111,7 @@ export class CodexBridge {
         return {
           threadId,
           reply,
+          rateLimits,
         };
       } finally {
         await cleanupFile(outputFilePath);
@@ -116,15 +146,24 @@ function buildCodexCommandArgs(
   threadId: string | undefined,
   prompt: string,
   outputFilePath: string,
+  includeRateLimits: boolean,
 ): string[] {
+  const baseArgs = [
+    "exec",
+    "--color",
+    "never",
+    "--skip-git-repo-check",
+    "--output-last-message",
+    outputFilePath,
+  ];
+
+  if (includeRateLimits) {
+    baseArgs.push("--json");
+  }
+
   if (threadId) {
     return [
-      "exec",
-      "--color",
-      "never",
-      "--skip-git-repo-check",
-      "--output-last-message",
-      outputFilePath,
+      ...baseArgs,
       "resume",
       threadId,
       prompt,
@@ -132,12 +171,7 @@ function buildCodexCommandArgs(
   }
 
   return [
-    "exec",
-    "--color",
-    "never",
-    "--skip-git-repo-check",
-    "--output-last-message",
-    outputFilePath,
+    ...baseArgs,
     prompt,
   ];
 }
@@ -212,9 +246,41 @@ function runProcess(
 }
 
 function parseSessionId(stdout: string): string | undefined {
+  const eventSessionId = parseSessionIdFromJsonEvents(stdout);
+
+  if (eventSessionId) {
+    return eventSessionId;
+  }
+
   const match = CODEX_SESSION_ID_PATTERN.exec(stdout);
   const value = match?.[1]?.trim();
   return value || undefined;
+}
+
+function parseSessionIdFromJsonEvents(output: string): string | undefined {
+  let sessionId: string | undefined;
+
+  for (const line of output.split("\n")) {
+    const parsed = parseJsonLine(line);
+
+    if (!parsed || typeof parsed !== "object") {
+      continue;
+    }
+
+    const eventType = asString((parsed as Record<string, unknown>).type);
+
+    if (eventType !== "thread.started") {
+      continue;
+    }
+
+    const candidate = asString((parsed as Record<string, unknown>).thread_id);
+
+    if (candidate) {
+      sessionId = candidate;
+    }
+  }
+
+  return sessionId;
 }
 
 function parseAssistantReply(stdout: string): string | undefined {
@@ -256,6 +322,163 @@ function buildCodexFailureMessage(result: ProcessResult): string {
   const detail = stderr.at(-1) ?? stdout.at(-1) ?? "Codex command failed.";
 
   return `Codex command failed (exit ${result.exitCode}): ${detail}`;
+}
+
+function parseRateLimits(output: string): CodexRateLimits | undefined {
+  let latest: CodexRateLimits | undefined;
+
+  for (const line of output.split("\n")) {
+    const parsed = parseJsonLine(line);
+
+    if (!parsed || typeof parsed !== "object") {
+      continue;
+    }
+
+    const asRecord = parsed as Record<string, unknown>;
+    const directRateLimits = asRecord.type === "token_count" ? asRecord.rate_limits : undefined;
+    const payloadValue = asRecord.payload;
+    const payload =
+      payloadValue && typeof payloadValue === "object"
+        ? (payloadValue as Record<string, unknown>)
+        : undefined;
+    const payloadRateLimits =
+      payload?.type === "token_count" ? payload.rate_limits : undefined;
+    const rateLimits = normalizeRateLimits(directRateLimits ?? payloadRateLimits);
+
+    if (rateLimits) {
+      latest = rateLimits;
+    }
+  }
+
+  return latest;
+}
+
+function normalizeRateLimits(value: unknown): CodexRateLimits | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  const primary = normalizeRateLimitWindow(record.primary);
+  const secondary = normalizeRateLimitWindow(record.secondary);
+  const credits = normalizeCredits(record.credits);
+  const limitId = asString(record.limit_id);
+  const limitName = asStringOrNull(record.limit_name);
+  const planType = asStringOrNull(record.plan_type);
+
+  if (!primary && !secondary && !credits && !limitId && !limitName && !planType) {
+    return undefined;
+  }
+
+  return {
+    limitId,
+    limitName,
+    primary,
+    secondary,
+    credits,
+    planType,
+  };
+}
+
+function normalizeRateLimitWindow(value: unknown): CodexRateLimitWindow | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  const usedPercent = asFiniteNumber(record.used_percent);
+  const windowMinutes = asFiniteNumber(record.window_minutes);
+  const resetsAt = asFiniteNumber(record.resets_at);
+
+  if (
+    typeof usedPercent === "undefined" ||
+    typeof windowMinutes === "undefined" ||
+    typeof resetsAt === "undefined"
+  ) {
+    return undefined;
+  }
+
+  return {
+    usedPercent,
+    windowMinutes,
+    resetsAt,
+  };
+}
+
+function normalizeCredits(value: unknown): CodexCredits | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  const hasCredits = asBoolean(record.has_credits);
+  const unlimited = asBoolean(record.unlimited);
+  const balance = asNumberOrNull(record.balance) ?? null;
+
+  if (typeof hasCredits === "undefined" || typeof unlimited === "undefined") {
+    return undefined;
+  }
+
+  return {
+    hasCredits,
+    unlimited,
+    balance,
+  };
+}
+
+function parseJsonLine(line: string): unknown {
+  const trimmed = line.trim();
+
+  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(trimmed) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+function asString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
+function asStringOrNull(value: unknown): string | null | undefined {
+  if (value === null) {
+    return null;
+  }
+
+  return asString(value);
+}
+
+function asFiniteNumber(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+
+  return value;
+}
+
+function asBoolean(value: unknown): boolean | undefined {
+  if (typeof value !== "boolean") {
+    return undefined;
+  }
+
+  return value;
+}
+
+function asNumberOrNull(value: unknown): number | null | undefined {
+  if (value === null) {
+    return null;
+  }
+
+  return asFiniteNumber(value);
 }
 
 async function readAssistantReply(
