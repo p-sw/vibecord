@@ -6,8 +6,8 @@ import { syncSessionChannels } from "./channel-mode.ts";
 import { attachCommandHandlers, registerCommands } from "./commands.ts";
 import { attachMessageRelay } from "./message-relay.ts";
 
-export async function startDiscordBot(): Promise<void> {
-  const config = loadBotConfig();
+export async function startDiscordBot(configFilePath?: string): Promise<void> {
+  const config = await loadBotConfig(configFilePath);
   const store = new SessionStore(config.stateFilePath);
   const codex = new CodexBridge(store);
 

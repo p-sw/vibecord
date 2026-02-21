@@ -4,8 +4,10 @@
 Vibecord is a Bun + TypeScript Discord bot project for Codex session operations in Discord.
 
 ## Project Structure & Module Organization
-- `index.ts`: process entrypoint that starts the Discord bot runtime.
-- `src/config.ts`: environment configuration and mode detection (`dm` or `channel`).
+- `index.ts`: process entrypoint that routes CLI commands (`start`, `setup`, `help`).
+- `bin/vibecord`: global executable shim used by `npm i -g vibecord`.
+- `src/cli.ts`: command parsing and interactive setup flow (config + optional binary build + systemd registration).
+- `src/config.ts`: JSON file configuration loading/writing and mode detection (`dm` or `channel`).
 - `src/discord/bot.ts`: Discord client bootstrap.
 - `src/discord/commands.ts`: slash command registration and handlers (`/new`, `/delete`, `/focus`, `/list`).
 - `src/discord/channel-mode.ts`: session-to-channel sync logic for channel mode.
@@ -21,19 +23,27 @@ Vibecord is a Bun + TypeScript Discord bot project for Codex session operations 
 As features grow, place reusable logic under `src/` and keep `index.ts` as thin bot bootstrap wiring.
 
 ## Build, Test, and Development Commands
+- `npm i -g vibecord`: install global CLI.
 - `bun install`: install dependencies from `package.json`.
-- `bun run start`: start the Discord bot.
-- `bun run dev`: same as start for local iteration.
+- `vibecord setup`: interactive setup for config and optional service.
+- `vibecord start`: start the Discord bot with default config path.
+- `vibecord start --config /path/to/config.json`: start with explicit config file.
+- `bun run start`: start via local source (same as `vibecord start`).
+- `bun run setup`: run interactive setup from local source.
+- `bun run dev`: same as `bun run start` for local iteration.
 
 Example:
 ```bash
-bun run index.ts
+bun run index.ts start
 ```
 
 ## Runtime Configuration
-- `DISCORD_BOT_TOKEN` (required): Discord bot token.
-- `DISCORD_GUILD_ID` + `DISCORD_CATEGORY_ID` (optional pair): enables channel mode; if either is set, both must be set.
-- `VIBECORD_STATE_FILE` (optional): absolute/relative path for session state JSON file (default `.vibecord/sessions.json`).
+- Config file path default: `~/.config/vibecord/config.json` (override with `--config`).
+- Config key `discordBotToken` (required): Discord bot token.
+- Config key `mode` (required): `dm` or `channel`.
+- Config keys `guildId` + `categoryId` (required in `channel` mode).
+- Config key `stateFilePath` (optional): absolute/relative path for session state JSON file (default `~/.local/state/vibecord/sessions.json`).
+- `vibecord setup` can optionally build a standalone Bun binary and register a systemd user/system service on Linux.
 - Codex CLI must be installed and authenticated (`codex --version`, `codex login`) on the host running the bot.
 
 ## Coding Style & Naming Conventions
@@ -61,7 +71,7 @@ Current history is minimal (`Initial commit`), so use concise, imperative commit
 
 ## Security & Configuration Tips
 - Do not commit secrets (`.env`, Discord tokens, API keys).
-- Keep runtime credentials in local environment variables (`DISCORD_BOT_TOKEN`, optional `DISCORD_GUILD_ID`, `DISCORD_CATEGORY_ID`).
+- Keep runtime credentials in local config files with restricted permissions.
 - Validate user input from slash commands and messages before invoking external services.
 
 ## Maintenance Rule

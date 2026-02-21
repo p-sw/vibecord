@@ -1,11 +1,16 @@
 {
   "name": "vibecord",
+  "version": "0.1.0",
+  "description": "Discord bot runtime for Codex session operations",
   "module": "index.ts",
   "type": "module",
-  "private": true,
+  "bin": {
+    "vibecord": "bin/vibecord"
+  },
   "scripts": {
-    "dev": "bun run index.ts",
-    "start": "bun run index.ts"
+    "dev": "bun run index.ts start",
+    "start": "bun run index.ts start",
+    "setup": "bun run index.ts setup"
   },
   "devDependencies": {
     "@types/bun": "latest"
