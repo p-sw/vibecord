@@ -371,10 +371,13 @@ function runProcess(
     if (typeof timeoutMs === "number" && timeoutMs > 0) {
       timeoutHandle = setTimeout(() => {
         timedOut = true;
-        child.kill("SIGTERM");
+        child.kill("SIGINT");
         forceKillHandle = setTimeout(() => {
-          child.kill("SIGKILL");
-        }, 2_000);
+          child.kill("SIGTERM");
+          forceKillHandle = setTimeout(() => {
+            child.kill("SIGKILL");
+          }, 2_000);
+        }, 1_000);
       }, timeoutMs);
     }
 
