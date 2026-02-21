@@ -319,7 +319,7 @@ async function handleStatusCommand(
   }
 
   await interaction.editReply({
-    content: clipForDiscord(sections.join("\n\n")),
+    content: clipForDiscord(stripBackticksAroundDiscordTimestamps(sections.join("\n\n"))),
   });
 }
 
@@ -439,6 +439,10 @@ function clampPercent(value: number): number {
 function formatPercent(value: number): string {
   const rounded = Math.round(value * 10) / 10;
   return Number.isInteger(rounded) ? `${rounded.toFixed(0)}%` : `${rounded.toFixed(1)}%`;
+}
+
+function stripBackticksAroundDiscordTimestamps(content: string): string {
+  return content.replace(/`(<t:\d{10}:[A-Za-z]>)`/g, "$1");
 }
 
 async function clearGuildScopedCommands(client: Client): Promise<void> {
