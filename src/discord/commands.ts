@@ -9,6 +9,7 @@ import type { SessionRecord } from "../session/types.ts";
 import {
   deleteSessionChannel,
   ensureSessionChannel,
+  resolveConfiguredGuild,
 } from "./channel-mode.ts";
 
 const commandBuilders = [
@@ -75,7 +76,7 @@ export async function registerCommands(
   await client.application.commands.set(commandPayload);
 
   if (hasChannelMode(config)) {
-    const guild = await client.guilds.fetch(config.guildId);
+    const guild = await resolveConfiguredGuild(client, config);
     await guild.commands.set(commandPayload);
   }
 }
