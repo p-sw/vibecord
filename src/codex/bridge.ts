@@ -49,8 +49,9 @@ export class CodexBridge {
         throw new Error(buildCodexFailureMessage(result));
       }
 
+      const combinedOutput = [result.stdout, result.stderr].join("\n");
       const threadId =
-        parseSessionId(result.stdout) ?? session.codexThreadId;
+        parseSessionId(combinedOutput) ?? session.codexThreadId;
 
       if (!threadId) {
         throw new Error(
@@ -58,7 +59,7 @@ export class CodexBridge {
         );
       }
 
-      const reply = parseAssistantReply(result.stdout);
+      const reply = parseAssistantReply(combinedOutput);
 
       if (!reply) {
         throw new Error(
@@ -106,17 +107,17 @@ function buildCodexCommandArgs(
 ): string[] {
   if (threadId) {
     return [
+      "exec",
       "--color",
       "never",
-      "exec",
-      "resume",
       "--skip-git-repo-check",
+      "resume",
       threadId,
       prompt,
     ];
   }
 
-  return ["--color", "never", "exec", "--skip-git-repo-check", prompt];
+  return ["exec", "--color", "never", "--skip-git-repo-check", prompt];
 }
 
 async function resolveCodexWorkingDirectory(projectPath: string): Promise<string> {
@@ -232,5 +233,5 @@ function buildCodexFailureMessage(result: ProcessResult): string {
     .filter(Boolean);
   const detail = stderr.at(-1) ?? stdout.at(-1) ?? "Codex command failed.";
 
-  return `Codex command failed: ${detail}`;
+  return `Codex command failed (exit ${result.exitCode}): ${detail}`;
 }
