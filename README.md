@@ -84,6 +84,9 @@ Use slash commands in Discord:
 - `/compact [session_id]` runs Codex `/compact` in a session (defaults to channel-linked or focused session).
 - `/init [session_id]` runs Codex `/init` in a session (defaults to channel-linked or focused session).
 
+Slash command execution notes:
+- `/status`, `/compact`, and `/init` are executed through Codex interactive session mode, not `codex exec`.
+
 Chat with Codex from Discord:
 - DM mode: send a normal DM to the bot; it forwards the message to your focused session and replies with Codex output. If `dmAllowlistUserIds` is set, only listed users can send DM prompts to Codex.
 - Channel mode (enabled when `guildId` + `categoryId` are set): send a normal message in a session channel; the bot forwards it to that session and replies in-thread.

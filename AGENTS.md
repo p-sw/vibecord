@@ -12,7 +12,7 @@ Vibecord is a TypeScript Discord bot project for Codex session operations in Dis
 - `src/discord/commands.ts`: slash command registration and handlers (`/new`, `/delete`, `/focus`, `/list`, `/status`, `/compact`, `/init`).
 - `src/discord/channel-mode.ts`: session-to-channel sync logic for channel mode.
 - `src/discord/message-relay.ts`: Discord message forwarding from DM/session channels into Codex sessions.
-- `src/codex/bridge.ts`: Codex CLI bridge for creating/resuming sessions and collecting assistant replies.
+- `src/codex/bridge.ts`: Codex CLI bridge for creating/resuming sessions and collecting assistant replies; slash-command flows can run via interactive `codex resume`.
 - `src/session/store.ts`: JSON-backed persistent session/focus state store.
 - `src/session/types.ts`: session and state type definitions.
 - `package.json`: runtime metadata and scripts.

@@ -338,6 +338,7 @@ async function handleStatusCommand(
 
   const result = await context.codex.sendMessage(session, "/status", {
     includeRateLimits: true,
+    interactiveSession: true,
   });
   const usageSummary = formatRateLimitSummary(result.rateLimits);
   const contextWindowFooter = formatContextWindowFooter(result.contextWindow);
@@ -389,7 +390,9 @@ async function handleCompactCommand(
   }
 
   await interaction.deferReply();
-  const result = await context.codex.sendMessage(session, "/compact");
+  const result = await context.codex.sendMessage(session, "/compact", {
+    interactiveSession: true,
+  });
 
   await interaction.editReply({
     content: clipForDiscord(`Session \`${session.id}\` compact:\n${result.reply}`),
@@ -421,7 +424,9 @@ async function handleInitCommand(
   }
 
   await interaction.deferReply();
-  const result = await context.codex.sendMessage(session, "/init");
+  const result = await context.codex.sendMessage(session, "/init", {
+    interactiveSession: true,
+  });
 
   await interaction.editReply({
     content: clipForDiscord(`Session \`${session.id}\` init:\n${result.reply}`),

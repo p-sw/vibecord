@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-import { dirname, resolve } from "node:path";
-import { readFile, stat, unlink } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { readFile, readdir, stat, unlink } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import { SessionStore } from "../session/store.ts";
 import type { SessionRecord } from "../session/types.ts";
 
@@ -25,6 +25,7 @@ interface ProcessResult {
 
 interface SendMessageOptions {
   includeRateLimits?: boolean;
+  interactiveSession?: boolean;
 }
 
 export interface CodexRateLimitWindow {
@@ -75,57 +76,119 @@ export class CodexBridge {
 
     return this.withSessionLock(session.id, async () => {
       const cwd = await resolveCodexWorkingDirectory(session.projectPath);
-      const outputFilePath = resolve(
-        tmpdir(),
-        `vibecord-codex-reply-${randomUUID()}.txt`,
-      );
-      const commandArgs = buildCodexCommandArgs(
-        session.codexThreadId,
-        trimmedPrompt,
-        outputFilePath,
-        options.includeRateLimits === true,
-      );
-      const result = await runProcess(CODEX_BINARY, commandArgs, cwd);
 
-      try {
-        if (result.exitCode !== 0) {
-          throw new Error(buildCodexFailureMessage(result));
-        }
-
-        const combinedOutput = [result.stdout, result.stderr].join("\n");
-        const threadId =
-          parseSessionId(combinedOutput) ?? session.codexThreadId;
-        const rateLimits = parseRateLimits(combinedOutput);
-        const contextWindow = parseContextWindow(combinedOutput);
-
-        if (!threadId) {
-          throw new Error(
-            "Codex did not expose a session id. Check Codex CLI configuration and try again.",
-          );
-        }
-
-        const reply = await readAssistantReply(outputFilePath, combinedOutput);
-
-        if (!reply) {
-          throw new Error(
-            "Codex did not return an assistant reply. Try sending the message again.",
-          );
-        }
-
-        if (threadId !== session.codexThreadId) {
-          await this.store.setSessionCodexThreadId(session.id, threadId);
-        }
-
-        return {
-          threadId,
-          reply,
-          rateLimits,
-          contextWindow,
-        };
-      } finally {
-        await cleanupFile(outputFilePath);
+      if (options.interactiveSession) {
+        return this.sendMessageViaInteractiveSession(session, trimmedPrompt, cwd);
       }
+
+      return this.sendMessageViaExec(session, trimmedPrompt, cwd, options);
     });
+  }
+
+  private async sendMessageViaExec(
+    session: SessionRecord,
+    prompt: string,
+    cwd: string,
+    options: SendMessageOptions,
+  ): Promise<CodexTurnResult> {
+    const outputFilePath = resolve(
+      tmpdir(),
+      `vibecord-codex-reply-${randomUUID()}.txt`,
+    );
+    const commandArgs = buildCodexCommandArgs(
+      session.codexThreadId,
+      prompt,
+      outputFilePath,
+      options.includeRateLimits === true,
+    );
+    const result = await runProcess(CODEX_BINARY, commandArgs, cwd);
+
+    try {
+      if (result.exitCode !== 0) {
+        throw new Error(buildCodexFailureMessage(result));
+      }
+
+      const combinedOutput = [result.stdout, result.stderr].join("\n");
+      const threadId =
+        parseSessionId(combinedOutput) ?? session.codexThreadId;
+      const rateLimits = parseRateLimits(combinedOutput);
+      const contextWindow = parseContextWindow(combinedOutput);
+
+      if (!threadId) {
+        throw new Error(
+          "Codex did not expose a session id. Check Codex CLI configuration and try again.",
+        );
+      }
+
+      const reply = await readAssistantReply(outputFilePath, combinedOutput);
+
+      if (!reply) {
+        throw new Error(
+          "Codex did not return an assistant reply. Try sending the message again.",
+        );
+      }
+
+      if (threadId !== session.codexThreadId) {
+        await this.store.setSessionCodexThreadId(session.id, threadId);
+      }
+
+      return {
+        threadId,
+        reply,
+        rateLimits,
+        contextWindow,
+      };
+    } finally {
+      await cleanupFile(outputFilePath);
+    }
+  }
+
+  private async sendMessageViaInteractiveSession(
+    session: SessionRecord,
+    prompt: string,
+    cwd: string,
+  ): Promise<CodexTurnResult> {
+    const snapshot = await captureSessionLogSnapshot();
+    const commandArgs = buildInteractiveCommandArgs(session.codexThreadId, prompt);
+    const result = await runProcess(CODEX_BINARY, commandArgs, cwd);
+
+    if (result.exitCode !== 0) {
+      throw new Error(buildCodexFailureMessage(result));
+    }
+
+    const combinedOutput = [result.stdout, result.stderr].join("\n");
+    const logDelta = await readSessionLogDelta(snapshot);
+    const combinedWithLog = `${combinedOutput}\n${logDelta}`;
+    const threadId =
+      parseSessionId(combinedWithLog) ?? session.codexThreadId;
+    const rateLimits =
+      parseRateLimits(combinedWithLog) ?? parseRateLimits(logDelta);
+    const contextWindow =
+      parseContextWindow(combinedWithLog) ?? parseContextWindow(logDelta);
+    const reply = parseAssistantReplyFromJsonEvents(logDelta) ?? parseAssistantReply(combinedOutput);
+
+    if (!threadId) {
+      throw new Error(
+        "Codex did not expose a session id. Check Codex CLI configuration and try again.",
+      );
+    }
+
+    if (!reply) {
+      throw new Error(
+        "Codex did not return an assistant reply in interactive mode. Try sending the command again.",
+      );
+    }
+
+    if (threadId !== session.codexThreadId) {
+      await this.store.setSessionCodexThreadId(session.id, threadId);
+    }
+
+    return {
+      threadId,
+      reply,
+      rateLimits,
+      contextWindow,
+    };
   }
 
   private async withSessionLock<T>(
@@ -150,6 +213,13 @@ export class CodexBridge {
     }
   }
 }
+
+interface SessionLogSnapshot {
+  latestFilePath?: string;
+  lineCount: number;
+}
+
+const CODEX_SESSION_LOG_ROOT = resolve(homedir(), ".codex", "sessions");
 
 function buildCodexCommandArgs(
   threadId: string | undefined,
@@ -183,6 +253,17 @@ function buildCodexCommandArgs(
     ...baseArgs,
     prompt,
   ];
+}
+
+function buildInteractiveCommandArgs(
+  threadId: string | undefined,
+  prompt: string,
+): string[] {
+  if (threadId) {
+    return ["--no-alt-screen", "resume", threadId, prompt];
+  }
+
+  return ["--no-alt-screen", prompt];
 }
 
 async function resolveCodexWorkingDirectory(projectPath: string): Promise<string> {
@@ -315,6 +396,90 @@ function parseAssistantReply(stdout: string): string | undefined {
   return undefined;
 }
 
+function parseAssistantReplyFromJsonEvents(output: string): string | undefined {
+  let latestReply: string | undefined;
+
+  for (const line of output.split("\n")) {
+    const parsed = parseJsonLine(line);
+
+    if (!parsed || typeof parsed !== "object") {
+      continue;
+    }
+
+    const record = parsed as Record<string, unknown>;
+    const payloadValue = record.payload;
+    const payload =
+      payloadValue && typeof payloadValue === "object"
+        ? (payloadValue as Record<string, unknown>)
+        : undefined;
+
+    const directReply = parseAssistantReplyFromJsonObject(record);
+
+    if (directReply) {
+      latestReply = directReply;
+      continue;
+    }
+
+    if (!payload) {
+      continue;
+    }
+
+    const payloadReply = parseAssistantReplyFromJsonObject(payload);
+
+    if (payloadReply) {
+      latestReply = payloadReply;
+    }
+  }
+
+  return latestReply;
+}
+
+function parseAssistantReplyFromJsonObject(
+  record: Record<string, unknown>,
+): string | undefined {
+  if (record.type === "agent_message") {
+    return asString(record.message);
+  }
+
+  if (record.type !== "message") {
+    return undefined;
+  }
+
+  if (record.role !== "assistant") {
+    return undefined;
+  }
+
+  const content = record.content;
+
+  if (!Array.isArray(content)) {
+    return undefined;
+  }
+
+  const textParts: string[] = [];
+
+  for (const item of content) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+
+    const contentItem = item as Record<string, unknown>;
+    const itemType = asString(contentItem.type);
+    const text =
+      asString(contentItem.text) ??
+      asString(contentItem.output_text);
+
+    if ((itemType === "output_text" || itemType === "text") && text) {
+      textParts.push(text);
+    }
+  }
+
+  if (textParts.length === 0) {
+    return undefined;
+  }
+
+  return textParts.join("\n").trim() || undefined;
+}
+
 function buildCodexFailureMessage(result: ProcessResult): string {
   const stderr = result.stderr
     .replace(/\r/g, "")
@@ -389,6 +554,112 @@ function parseContextWindow(output: string): CodexContextWindow | undefined {
   }
 
   return latest;
+}
+
+async function captureSessionLogSnapshot(): Promise<SessionLogSnapshot> {
+  const latestFilePath = await findLatestSessionLogFile();
+
+  if (!latestFilePath) {
+    return {
+      lineCount: 0,
+    };
+  }
+
+  const lineCount = await countFileLines(latestFilePath);
+
+  return {
+    latestFilePath,
+    lineCount,
+  };
+}
+
+async function readSessionLogDelta(snapshot: SessionLogSnapshot): Promise<string> {
+  const latestFilePath = await findLatestSessionLogFile();
+
+  if (!latestFilePath) {
+    return "";
+  }
+
+  let content: string;
+
+  try {
+    content = await readFile(latestFilePath, "utf8");
+  } catch {
+    return "";
+  }
+
+  const lines = content.split("\n");
+
+  if (snapshot.latestFilePath === latestFilePath) {
+    return lines.slice(snapshot.lineCount).join("\n");
+  }
+
+  return lines.join("\n");
+}
+
+async function findLatestSessionLogFile(): Promise<string | undefined> {
+  const files = await collectSessionLogFiles(CODEX_SESSION_LOG_ROOT);
+
+  if (files.length === 0) {
+    return undefined;
+  }
+
+  let latestPath: string | undefined;
+  let latestMtime = -1;
+
+  for (const filePath of files) {
+    try {
+      const details = await stat(filePath);
+      const mtimeMs = details.mtimeMs;
+
+      if (mtimeMs > latestMtime) {
+        latestMtime = mtimeMs;
+        latestPath = filePath;
+      }
+    } catch {
+      // Ignore files deleted or inaccessible between listing and stat.
+    }
+  }
+
+  return latestPath;
+}
+
+async function collectSessionLogFiles(directory: string): Promise<string[]> {
+  let entries;
+
+  try {
+    entries = await readdir(directory, {
+      withFileTypes: true,
+    });
+  } catch {
+    return [];
+  }
+
+  const files: string[] = [];
+
+  for (const entry of entries) {
+    const entryPath = join(directory, entry.name);
+
+    if (entry.isDirectory()) {
+      files.push(...(await collectSessionLogFiles(entryPath)));
+      continue;
+    }
+
+    if (entry.isFile() && entry.name.endsWith(".jsonl")) {
+      files.push(entryPath);
+    }
+  }
+
+  return files;
+}
+
+async function countFileLines(filePath: string): Promise<number> {
+  try {
+    const content = await readFile(filePath, "utf8");
+    return content.split("\n").length;
+  } catch {
+    return 0;
+  }
 }
 
 function extractTokenCountInfo(
